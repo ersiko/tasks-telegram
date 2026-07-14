@@ -1,0 +1,18 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      USERS_FILE: /data/users.json
+    volumes:
+      - bot_data:/data
+    restart: unless-stopped
+    networks:
+      - vikunja_default
+
+networks:
+  vikunja_default:
+    external: true
+
+volumes:
+  bot_data:
