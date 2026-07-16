@@ -29,14 +29,14 @@ async def send_digests(bot: Bot, user_store: UserStore, cipher: TokenCipher, con
         if client is None:
             continue
         try:
-            tasks, titles = await ordered_tasks(client, "t")
+            tasks, titles = await ordered_tasks(client, "t", config)
         except VikunjaAPIError:
             logger.exception("Failed to fetch morning digest tasks for %s (%s)", display_name, telegram_id)
             continue
         if not tasks:
             continue
 
-        text = "☀️ Good morning! Due today or overdue:\n\n" + format_task_list_text(tasks, "t", titles)
+        text = "☀️ Good morning! Due today or overdue:\n\n" + format_task_list_text(tasks, "t", titles, config)
         try:
             await bot.send_message(telegram_id, text, reply_markup=list_menu_keyboard("t"))
         except Exception:
@@ -44,7 +44,7 @@ async def send_digests(bot: Bot, user_store: UserStore, cipher: TokenCipher, con
 
 
 async def run_digest_loop(bot: Bot, user_store: UserStore, cipher: TokenCipher, config: Config) -> None:
-    tz = ZoneInfo(config.digest_timezone)
+    tz = ZoneInfo(config.timezone)
     hour, minute = (int(part) for part in config.digest_time.split(":"))
 
     while True:

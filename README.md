@@ -46,9 +46,9 @@ key plus `users.json` can decrypt everyone's Vikunja tokens.
 
 Copy `.env.example` to `.env` and fill in `BOT_TOKEN`, `VIKUNJA_URL` (include
 the `/api/v1` suffix), `ADMIN_TELEGRAM_ID`, and `FERNET_KEY`. Also set
-`DIGEST_TIMEZONE` to your actual IANA timezone (e.g. `Europe/Madrid`) —
-it defaults to UTC, so `DIGEST_TIME` would otherwise fire at the wrong
-local hour.
+`TIMEZONE` to your actual IANA timezone (e.g. `Europe/Madrid`) — it defaults
+to UTC, so `DIGEST_TIME` and the `/today`/`/week` boundaries would otherwise
+be off by your UTC offset.
 
 ### 5. Run it
 
@@ -137,27 +137,29 @@ Multi-word labels/projects can be quoted: `*"home repair" +"Household Chores"`.
 
 - `/list [project]` — open tasks, optionally filtered by project
 - `/today` — tasks due today or overdue
+- `/week` (alias `/this_week`) — tasks due by the end of this week (Mon-Sun)
+  or overdue — handy for planning a weekly sprint
 - `/projects` — list your Vikunja projects
 - `/help` — quick-add syntax + command list
 - `/adduser`, `/removeuser`, `/users` — admin only
 
-`/list` (with no project given) and `/today` show tasks from multiple
-projects grouped under a `📁 Project` header; `/list <project>` stays a flat
-list since the project's already implied. Each of these sends one message
-with **✅ Mark Done** / **🗑 Delete** buttons — tapping either swaps to a
-per-task picker (titles as buttons) to complete the action, then the message
-refreshes back to the list in place. A freshly created task's confirmation
-message instead gets direct Done/Delete buttons for that one task, since
-there's nothing to pick from.
+`/list` (with no project given), `/today`, and `/week` show tasks from
+multiple projects grouped under a `📁 Project` header; `/list <project>`
+stays a flat list since the project's already implied. Each of these sends
+one message with **✅ Mark Done** / **🗑 Delete** buttons — tapping either
+swaps to a per-task picker (titles as buttons) to complete the action, then
+the message refreshes back to the list in place. A freshly created task's
+confirmation message instead gets direct Done/Delete buttons for that one
+task, since there's nothing to pick from.
 
 ## Morning digest
 
-Every day at `DIGEST_TIME` (in `DIGEST_TIMEZONE`), each registered user gets
+Every day at `DIGEST_TIME` (in `TIMEZONE`), each registered user gets
 a push message with their tasks due today or overdue, grouped by project —
 the same view as `/today`, sent proactively rather than on request. Anyone
 with nothing due that day gets no message at all, so it doesn't become daily
 noise. It runs as a background loop inside the same bot process (no separate
-scheduler/cron needed) and reads `DIGEST_TIME`/`DIGEST_TIMEZONE` from `.env`.
+scheduler/cron needed) and reads `DIGEST_TIME`/`TIMEZONE` from `.env`.
 
 ## Known limitations (v1)
 

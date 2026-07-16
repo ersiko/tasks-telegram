@@ -14,16 +14,16 @@ from bot.vikunja_client import VikunjaAPIError, VikunjaClient
 router = Router(name="tasks")
 
 
-async def _send_task_list(message: Message, client: VikunjaClient, ctx: str):
-    tasks, titles = await ordered_tasks(client, ctx)
-    text = format_task_list_text(tasks, ctx, titles)
+async def _send_task_list(message: Message, client: VikunjaClient, ctx: str, config: Config):
+    tasks, titles = await ordered_tasks(client, ctx, config)
+    text = format_task_list_text(tasks, ctx, titles, config)
     kb = list_menu_keyboard(ctx) if tasks else None
     await message.answer(text, reply_markup=kb)
 
 
-async def _refresh_list_message(callback: CallbackQuery, client: VikunjaClient, ctx: str) -> None:
-    tasks, titles = await ordered_tasks(client, ctx)
-    text = format_task_list_text(tasks, ctx, titles)
+async def _refresh_list_message(callback: CallbackQuery, client: VikunjaClient, ctx: str, config: Config) -> None:
+    tasks, titles = await ordered_tasks(client, ctx, config)
+    text = format_task_list_text(tasks, ctx, titles, config)
     kb = list_menu_keyboard(ctx) if tasks else None
     await callback.message.edit_text(text, reply_markup=kb)
 
@@ -44,7 +44,7 @@ async def cmd_list(message: Message, command: CommandObject, user_store: UserSto
         ctx = f"p{project['id']}"
 
     try:
-        await _send_task_list(message, client, ctx)
+        await _send_task_list(message, client, ctx, config)
     except VikunjaAPIError as exc:
         await message.answer(f"Vikunja error: {exc}")
 
@@ -57,7 +57,20 @@ async def cmd_today(message: Message, user_store: UserStore, cipher: TokenCipher
         return
 
     try:
-        await _send_task_list(message, client, "t")
+        await _send_task_list(message, client, "t", config)
+    except VikunjaAPIError as exc:
+        await message.answer(f"Vikunja error: {exc}")
+
+
+@router.message(Command("week", "this_week"))
+async def cmd_week(message: Message, user_store: UserStore, cipher: TokenCipher, config: Config):
+    client = await get_client_for_user(message.from_user.id, user_store, cipher, config)
+    if client is None:
+        await message.answer(UNREGISTERED_MESSAGE.format(user_id=message.from_user.id), parse_mode="Markdown")
+        return
+
+    try:
+        await _send_task_list(message, client, "w", config)
     except VikunjaAPIError as exc:
         await message.answer(f"Vikunja error: {exc}")
 
@@ -118,7 +131,7 @@ async def cb_menu(callback: CallbackQuery, user_store: UserStore, cipher: TokenC
 
     _, action, ctx = callback.data.split(":", 2)
     try:
-        tasks, _ = await ordered_tasks(client, ctx)
+        tasks, _ = await ordered_tasks(client, ctx, config)
     except VikunjaAPIError as exc:
         await callback.answer(f"Error: {exc}", show_alert=True)
         return
@@ -140,7 +153,7 @@ async def cb_back(callback: CallbackQuery, user_store: UserStore, cipher: TokenC
 
     _, ctx = callback.data.split(":", 1)
     try:
-        await _refresh_list_message(callback, client, ctx)
+        await _refresh_list_message(callback, client, ctx, config)
     except VikunjaAPIError as exc:
         await callback.answer(f"Error: {exc}", show_alert=True)
         return
@@ -161,7 +174,7 @@ async def cb_pick(callback: CallbackQuery, user_store: UserStore, cipher: TokenC
             await client.set_done(task_id, True)
         else:
             await client.delete_task(task_id)
-        await _refresh_list_message(callback, client, ctx)
+        await _refresh_list_message(callback, client, ctx, config)
     except VikunjaAPIError as exc:
         await callback.answer(f"Error: {exc}", show_alert=True)
         return
