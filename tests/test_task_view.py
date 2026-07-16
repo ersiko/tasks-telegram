@@ -12,6 +12,7 @@ def _config(timezone: str = "Europe/Madrid") -> Config:
         fernet_key="x",
         users_file="users.json",
         default_project_name="Inbox",
+        weekly_project_name="Week to Week",
         digest_time="07:00",
         timezone=timezone,
     )

@@ -42,3 +42,11 @@ def reschedule_prompt_keyboard(task_id: int, ctx: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="‹ Cancel", callback_data=f"resched_cancel:{ctx}")],
         ]
     )
+
+
+def plan_week_keyboard(tasks: list[dict], project_id: int) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=task["title"][:40], callback_data=f"plan:{project_id}:{task['id']}")]
+        for task in tasks
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)

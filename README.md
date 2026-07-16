@@ -139,6 +139,11 @@ Multi-word labels/projects can be quoted: `*"home repair" +"Household Chores"`.
 - `/today` — tasks due today or overdue
 - `/week` (alias `/this_week`) — tasks due by the end of this week (Mon-Sun)
   or overdue — handy for planning a weekly sprint
+- `/plan_week` (alias `/choose_weekly_tasks`) — weekly planning ritual: shows
+  open tasks in `WEEKLY_PROJECT_NAME` with no due date yet, or a due date
+  before this week (carried over unfinished); tapping one sets its due date
+  to the end of this week and the message refreshes with the rest, so you
+  can tap through several goals in one sitting
 - `/projects` — list your Vikunja projects
 - `/help` — quick-add syntax + command list
 - `/adduser`, `/removeuser`, `/users` — admin only

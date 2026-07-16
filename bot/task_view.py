@@ -52,6 +52,37 @@ def _cutoff_for_ctx(ctx: str, config: Config, now: Optional[dt.datetime] = None)
     return None
 
 
+def week_end(config: Config, now: Optional[dt.datetime] = None) -> dt.datetime:
+    """End of the current Monday-Sunday week in local time - the target due
+    date for /plan_week and the cutoff /week uses."""
+    return _cutoff_for_ctx("w", config, now)
+
+
+def _week_start(now_local: dt.datetime) -> dt.datetime:
+    start_date = now_local - dt.timedelta(days=now_local.isoweekday() - 1)
+    return start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+async def get_planning_candidates(
+    client: VikunjaClient, project_id: int, config: Config, now: Optional[dt.datetime] = None
+) -> list[dict]:
+    """Open tasks in project_id with no due date, or a due date before this
+    week (never scheduled, or carried over unfinished) - candidates for
+    /plan_week to assign this week's due date to. Tasks already scheduled
+    for this week or later are left alone."""
+    now_local = now if now is not None else dt.datetime.now(_tz(config))
+    week_start = _week_start(now_local)
+
+    tasks = await client.list_tasks(project_id=project_id)
+    candidates = []
+    for task in tasks:
+        parsed = _parse_due(task.get("due_date"))
+        if parsed is None or parsed.astimezone(week_start.tzinfo) < week_start:
+            candidates.append(task)
+    candidates.sort(key=lambda t: t.get("due_date") or "9999")
+    return candidates[:MAX_LISTED_TASKS]
+
+
 async def get_tasks_for_ctx(client: VikunjaClient, ctx: str, config: Config) -> list[dict]:
     cutoff = _cutoff_for_ctx(ctx, config)
     if cutoff is not None:

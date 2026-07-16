@@ -10,6 +10,7 @@ class Config:
     fernet_key: str
     users_file: str
     default_project_name: str
+    weekly_project_name: str
     digest_time: str
     timezone: str
 
@@ -38,6 +39,7 @@ def load_config() -> Config:
         fernet_key=_required("FERNET_KEY"),
         users_file=os.environ.get("USERS_FILE", "users.json"),
         default_project_name=os.environ.get("DEFAULT_PROJECT_NAME", "Inbox"),
+        weekly_project_name=os.environ.get("WEEKLY_PROJECT_NAME", "Week to Week"),
         digest_time=os.environ.get("DIGEST_TIME", "07:00"),
         timezone=os.environ.get("TIMEZONE", "UTC"),
     )

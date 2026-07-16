@@ -9,7 +9,7 @@ from bot.config import load_config
 from bot.crypto import TokenCipher
 from bot.db import UserStore
 from bot.digest import run_digest_loop
-from bot.handlers import admin, projects, start, tasks
+from bot.handlers import admin, planning, projects, start, tasks
 
 
 async def main() -> None:
@@ -24,6 +24,7 @@ async def main() -> None:
     dp.include_router(admin.router)
     dp.include_router(start.router)
     dp.include_router(projects.router)
+    dp.include_router(planning.router)
     dp.include_router(tasks.router)
 
     await bot.delete_webhook(drop_pending_updates=True)
