@@ -64,14 +64,14 @@ Traefik/TLS:
 docker compose up -d --build
 ```
 
-`docker-compose.yml` already declares `vikunja_default` as an external
+`compose.yaml` already declares `vikunja_default` as an external
 network (Vikunja's compose project is named `vikunja`, so Compose names its
 default network `vikunja_default`) — this only works if the bot's compose
 project is brought up on `minipc1`, alongside Vikunja's own stack. When
 deploying this way, set `VIKUNJA_URL=http://vikunja:3456/api/v1` in the `.env`
 that lives on `minipc1` (see the comment in `.env.example`).
 
-`docker-compose.yml` also persists `users.json` in a named volume, so it
+`compose.yaml` also persists `users.json` in a named volume, so it
 survives container restarts/rebuilds.
 
 To deploy: copy this project's folder to `minipc1` (e.g. `git clone`/`scp`),
