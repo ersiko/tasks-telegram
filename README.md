@@ -90,10 +90,11 @@ these resources, only "read one" / "read all" — grant at least:
 - Tasks: **read all** (`/list` and `/today` hit the list-all endpoint and get
   a 401 without this), create, update, delete
 - Projects: read all
-- **Project Views: read all** (its own section, separate from "Projects") —
-  needed by `/list <project>` and `/plan_week`, which resolve a project's
-  view before listing its tasks
 - Labels: read all, create
+
+("Project Views" is not needed — the bot deliberately avoids the
+view-scoped task endpoint since it 401s on this Vikunja version even with
+full Tasks + Project Views permissions granted; see git history.)
 
 Granting everything (read one, update bulk, duplicate, position, etc.) is
 fine too — this is a small personal tool, not a multi-tenant service, so
