@@ -80,16 +80,21 @@ run `docker compose up -d --build` from that folder.
 
 ### 6. Create a Vikunja API token per person
 
-In Vikunja: **Settings → API Tokens → Create**. Grant at least:
+In Vikunja: **Settings → API Tokens → Create**. There's no plain "read" for
+these resources, only "read one" / "read all" — grant at least:
 
-- Tasks: **read all** (not just "read one" — `/list` and `/today` hit the
-  list-all endpoints and get a 401 without this), create, update, delete
+- Tasks: **read all** (`/list` and `/today` hit the list-all endpoint and get
+  a 401 without this), create, update, delete
 - Projects: read all
 - Labels: read all, create
 
+Granting everything (read one, update bulk, duplicate, position, etc.) is
+fine too — this is a small personal tool, not a multi-tenant service, so
+there's little reason to fuss over least-privilege here.
+
 Copy the generated token. If `/list` or `/today` come back with a 401
-"invalid token" error but `/projects` works fine, this is almost always the
-cause — re-create the token with the "all" variants checked.
+"invalid token" error but `/projects` works fine, it's almost always a
+missing "read all" permission — re-create the token with it checked.
 
 ### 7. Register each user
 
