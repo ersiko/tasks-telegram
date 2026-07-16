@@ -21,6 +21,10 @@ def list_menu_keyboard(ctx: str) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="📅 Reschedule", callback_data=f"menu:reschedule:{ctx}"),
+                InlineKeyboardButton(text="🔢 Priority", callback_data=f"menu:priority:{ctx}"),
+            ],
+            [
+                InlineKeyboardButton(text="✏️ Rename", callback_data=f"menu:rename:{ctx}"),
             ],
         ]
     )
@@ -39,7 +43,41 @@ def reschedule_prompt_keyboard(task_id: int, ctx: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🚫 Remove due date", callback_data=f"resched_clear:{task_id}:{ctx}")],
-            [InlineKeyboardButton(text="‹ Cancel", callback_data=f"resched_cancel:{ctx}")],
+            [InlineKeyboardButton(text="‹ Cancel", callback_data=f"pending_cancel:{ctx}")],
+        ]
+    )
+
+
+def cancel_pending_keyboard(ctx: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="‹ Cancel", callback_data=f"pending_cancel:{ctx}")]])
+
+
+PRIORITY_OPTIONS = [
+    ("🚫 Unset", 0),
+    ("⚪ Low", 1),
+    ("🔵 Medium", 2),
+    ("🟡 High", 3),
+    ("🟠 Urgent", 4),
+    ("🔴 Do now", 5),
+]
+
+
+def priority_picker_keyboard(task_id: int, ctx: str) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=label, callback_data=f"setprio:{value}:{task_id}:{ctx}")]
+        for label, value in PRIORITY_OPTIONS
+    ]
+    rows.append([InlineKeyboardButton(text="‹ Cancel", callback_data=f"back:{ctx}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def delete_confirm_keyboard(task_id: int, ctx: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🗑 Yes, delete", callback_data=f"delconfirm:{task_id}:{ctx}"),
+                InlineKeyboardButton(text="‹ Cancel", callback_data=f"back:{ctx}"),
+            ]
         ]
     )
 

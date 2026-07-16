@@ -129,15 +129,25 @@ Send a plain message to add a task. Quick-add syntax (mirrors Vikunja's own
 | `+project` | assign to a project (matched by name) | `+Bills` |
 | `*label` | add a label, repeatable | `*groceries` |
 | `!priority` | `low` / `medium` / `high` / `urgent` / `donow`, or `1`-`5` | `!high` |
+| `~repeat` | `daily` / `weekly` / `monthly`, or `every N days`/`weeks` | `~monthly` |
 | trailing text | parsed as the due date/time | `tomorrow 5pm`, `friday` |
 
 Everything else becomes the task title. Example:
 
 ```
 Pay rent +Bills !high tomorrow 5pm
+Clean dishwasher filter +Chores ~monthly
+Check dehumidifier +Chores ~every 3 days
 ```
 
 Multi-word labels/projects can be quoted: `*"home repair" +"Household Chores"`.
+
+`~repeat` needs a due date to repeat from — if you don't give one explicitly,
+it defaults to right now. `~daily`/`~weekly`/`~every N days`/`~every N weeks`
+repeat a fixed interval **after completion** (so a task you finish late
+doesn't immediately come due again); `~monthly` uses Vikunja's built-in
+calendar-month step instead, since a fixed day count can't handle
+28-31-day months correctly. There's no `~yearly` or `~every N months` yet.
 
 ### Commands
 
@@ -157,19 +167,28 @@ Multi-word labels/projects can be quoted: `*"home repair" +"Household Chores"`.
 `/list` (with no project given), `/today`, and `/week` show tasks from
 multiple projects grouped under a `📁 Project` header; `/list <project>`
 stays a flat list since the project's already implied. Each of these sends
-one message with **✅ Mark Done** / **🗑 Delete** / **📅 Reschedule** buttons —
-tapping any of them swaps to a per-task picker (titles as buttons) to pick
-which task, then:
+one message with **✅ Mark Done** / **🗑 Delete** / **📅 Reschedule** /
+**🔢 Priority** / **✏️ Rename** buttons — tapping any of them swaps to a
+per-task picker (titles as buttons) to pick which task, then:
 
-- Done/Delete apply immediately and the message refreshes back to the list.
-- Reschedule prompts you to reply with a new date (e.g. "friday 5pm", "next
-  monday" — same natural-language parser as quick-add), or tap **🚫 Remove
-  due date** to clear it instead. Replying "none" also clears it. The prompt
-  expires after 10 minutes if you never reply, so an abandoned reschedule
-  can't hijack your next quick-add message.
+- **Mark Done** applies immediately; the message refreshes back to the list.
+- **Delete** asks for confirmation first ("Yes, delete" / Cancel) — the one
+  irreversible action here, so it doesn't fire on a single mistap.
+- **Reschedule** prompts you to reply with a new date (e.g. "friday 5pm",
+  "next monday" — same natural-language parser as quick-add), or tap
+  **🚫 Remove due date** to clear it instead. Replying "none" also clears it.
+- **Priority** shows six buttons (Unset/Low/Medium/High/Urgent/Do now) — tap
+  one to set it immediately.
+- **Rename** prompts you to reply with the new title.
+
+Reschedule and Rename need a text reply, so the prompt expires after 10
+minutes if you never respond — otherwise an abandoned prompt could hijack
+your next quick-add message by mistaking it for the reply it was waiting for.
 
 A freshly created task's confirmation message instead gets direct Done/Delete
-buttons for that one task, since there's nothing to pick from.
+buttons for that one task (no confirmation on that Delete, since it's really
+an "undo" for a task you just created seconds ago) — there's nothing to pick
+from, and no picker step is needed.
 
 ## Morning digest
 
@@ -189,6 +208,12 @@ scheduler/cron needed) and reads `DIGEST_TIME`/`TIMEZONE` from `.env`.
   against a live task, since earlier endpoint quirks on this exact Vikunja
   version (see git history) mean it's worth verifying once used for real.
   If it errors instead of clearing, that's the first place to look.
+- Recurring tasks (`~daily`/`~weekly`/`~monthly`/`~every N days`/`~every N
+  weeks`) send `repeat_after`/`repeat_mode` per Vikunja's documented Task
+  model, but haven't been exercised against a live task yet either - same
+  "verify once used for real" caveat as above.
+- No `~yearly` or `~every N months` - only `monthly` gets Vikunja's
+  calendar-correct step; everything else is a fixed day/week count.
 - The due-date parser (`dateparser`) can occasionally misread part of a title
   as a date on ambiguous input. Check the confirmation reply after adding a
   task; use the 🗑 button to undo a bad parse and rephrase.

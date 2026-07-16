@@ -1,5 +1,7 @@
+import datetime as dt
 import time
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
@@ -10,27 +12,37 @@ from bot.access import UNREGISTERED_MESSAGE, get_client_for_user
 from bot.config import Config
 from bot.crypto import TokenCipher
 from bot.db import UserStore
-from bot.keyboards import list_menu_keyboard, reschedule_prompt_keyboard, task_picker_keyboard, task_row_keyboard
+from bot.keyboards import (
+    cancel_pending_keyboard,
+    delete_confirm_keyboard,
+    list_menu_keyboard,
+    priority_picker_keyboard,
+    reschedule_prompt_keyboard,
+    task_picker_keyboard,
+    task_row_keyboard,
+)
 from bot.task_view import format_task_list_text, ordered_tasks
 from bot.vikunja_client import VikunjaAPIError, VikunjaClient
 
 router = Router(name="tasks")
 
 RESCHEDULE_CLEAR_WORDS = {"none", "no date", "remove", "clear"}
-RESCHEDULE_TTL_SECONDS = 600
+PENDING_ACTION_TTL_SECONDS = 600
 
-# In-memory only, keyed by telegram_id: which task a user is mid-reschedule
-# on. Lost on restart, which is fine - worst case they just tap Reschedule
-# again. Bounded by RESCHEDULE_TTL_SECONDS so an abandoned reschedule can't
+# In-memory only, keyed by telegram_id: which task/action a user is
+# mid-reply on (reschedule or rename - both need a free-text follow-up,
+# unlike done/delete/priority which are pure button flows). Lost on
+# restart, which is fine - worst case they just tap the button again.
+# Bounded by PENDING_ACTION_TTL_SECONDS so an abandoned reply can't
 # permanently hijack that user's next quick-add message.
-_pending_reschedule: dict[int, dict] = {}
+_pending_text_action: dict[int, dict] = {}
 
 
-def _pop_valid_pending_reschedule(user_id: int) -> Optional[dict]:
-    entry = _pending_reschedule.pop(user_id, None)
+def _pop_valid_pending(user_id: int) -> Optional[dict]:
+    entry = _pending_text_action.pop(user_id, None)
     if entry is None:
         return None
-    if time.monotonic() - entry["set_at"] > RESCHEDULE_TTL_SECONDS:
+    if time.monotonic() - entry["set_at"] > PENDING_ACTION_TTL_SECONDS:
         return None
     return entry
 
@@ -47,6 +59,16 @@ async def _refresh_list_message(callback: CallbackQuery, client: VikunjaClient, 
     text = format_task_list_text(tasks, ctx, titles, config)
     kb = list_menu_keyboard(ctx) if tasks else None
     await callback.message.edit_text(text, reply_markup=kb)
+
+
+async def _edit_original_list_message(bot, pending: dict, client: VikunjaClient, config: Config) -> None:
+    tasks, titles = await ordered_tasks(client, pending["ctx"], config)
+    text = format_task_list_text(tasks, pending["ctx"], titles, config)
+    kb = list_menu_keyboard(pending["ctx"]) if tasks else None
+    try:
+        await bot.edit_message_text(chat_id=pending["chat_id"], message_id=pending["message_id"], text=text, reply_markup=kb)
+    except Exception:
+        pass  # original list message may be gone/too old to edit - not critical
 
 
 @router.message(Command("list"))
@@ -98,10 +120,11 @@ async def cmd_week(message: Message, user_store: UserStore, cipher: TokenCipher,
 
 async def _handle_reschedule_reply(message: Message, client: VikunjaClient, config: Config, pending: dict) -> None:
     text = message.text.strip()
-    new_due = None if text.lower() in RESCHEDULE_CLEAR_WORDS else quickadd.parse_date_only(text)
+    is_clear = text.lower() in RESCHEDULE_CLEAR_WORDS
+    new_due = None if is_clear else quickadd.parse_date_only(text)
 
-    if new_due is None and text.lower() not in RESCHEDULE_CLEAR_WORDS:
-        _pending_reschedule[message.from_user.id] = pending  # let them retry
+    if new_due is None and not is_clear:
+        _pending_text_action[message.from_user.id] = pending  # let them retry
         await message.answer(
             "I couldn't find a date in that. Try again (e.g. 'friday 5pm'), "
             "reply 'none' to remove the due date, or tap Cancel above."
@@ -114,20 +137,29 @@ async def _handle_reschedule_reply(message: Message, client: VikunjaClient, conf
         await message.answer(f"Vikunja rejected that: {exc}")
         return
 
-    tasks, titles = await ordered_tasks(client, pending["ctx"], config)
-    list_text = format_task_list_text(tasks, pending["ctx"], titles, config)
-    kb = list_menu_keyboard(pending["ctx"]) if tasks else None
-    try:
-        await message.bot.edit_message_text(
-            chat_id=pending["chat_id"], message_id=pending["message_id"], text=list_text, reply_markup=kb
-        )
-    except Exception:
-        pass  # original list message may be gone/too old to edit - not critical
+    await _edit_original_list_message(message.bot, pending, client, config)
 
     if new_due is None:
         await message.answer("🚫 Due date removed")
     else:
         await message.answer(f"📅 Rescheduled to {new_due.strftime('%a %d %b %H:%M')}")
+
+
+async def _handle_rename_reply(message: Message, client: VikunjaClient, config: Config, pending: dict) -> None:
+    new_title = message.text.strip()
+    if not new_title:
+        _pending_text_action[message.from_user.id] = pending  # let them retry
+        await message.answer("Title can't be empty. Try again, or tap Cancel above.")
+        return
+
+    try:
+        await client.set_title(pending["task_id"], new_title)
+    except VikunjaAPIError as exc:
+        await message.answer(f"Vikunja rejected that: {exc}")
+        return
+
+    await _edit_original_list_message(message.bot, pending, client, config)
+    await message.answer(f"✏️ Renamed to '{new_title}'")
 
 
 @router.message(F.text & ~F.text.startswith("/"))
@@ -137,9 +169,12 @@ async def handle_quick_add(message: Message, user_store: UserStore, cipher: Toke
         await message.answer(UNREGISTERED_MESSAGE.format(user_id=message.from_user.id), parse_mode="Markdown")
         return
 
-    pending = _pop_valid_pending_reschedule(message.from_user.id)
+    pending = _pop_valid_pending(message.from_user.id)
     if pending is not None:
-        await _handle_reschedule_reply(message, client, config, pending)
+        if pending["kind"] == "reschedule":
+            await _handle_reschedule_reply(message, client, config, pending)
+        elif pending["kind"] == "rename":
+            await _handle_rename_reply(message, client, config, pending)
         return
 
     result = quickadd.parse(message.text)
@@ -162,8 +197,19 @@ async def handle_quick_add(message: Message, user_store: UserStore, cipher: Toke
                 return
             project = projects[0]
 
+        due_date = result.due_date
+        if result.repeat_mode is not None and due_date is None:
+            # Repeat needs an initial due date to repeat from; default to
+            # now rather than silently dropping the repeat setting.
+            due_date = dt.datetime.now(ZoneInfo(config.timezone))
+
         task = await client.create_task(
-            project["id"], result.title, due_date=result.due_date, priority=result.priority
+            project["id"],
+            result.title,
+            due_date=due_date,
+            priority=result.priority,
+            repeat_after=result.repeat_after,
+            repeat_mode=result.repeat_mode,
         )
 
         for label_name in result.labels:
@@ -175,8 +221,11 @@ async def handle_quick_add(message: Message, user_store: UserStore, cipher: Toke
             summary.append("Labels: " + ", ".join(result.labels))
         if result.priority:
             summary.append(f"Priority: {result.priority}")
-        if result.due_date:
-            summary.append(f"Due: {result.due_date.strftime('%a %d %b %H:%M')}")
+        if due_date:
+            summary.append(f"Due: {due_date.strftime('%a %d %b %H:%M')}")
+        repeat_desc = quickadd.describe_repeat(result.repeat_after, result.repeat_mode)
+        if repeat_desc:
+            summary.append(f"Repeats: {repeat_desc}")
         await message.answer("\n".join(summary), reply_markup=task_row_keyboard(task["id"]))
     except VikunjaAPIError as exc:
         await message.answer(f"Vikunja rejected that: {exc}")
@@ -236,7 +285,8 @@ async def cb_pick(callback: CallbackQuery, user_store: UserStore, cipher: TokenC
         except VikunjaAPIError as exc:
             await callback.answer(f"Error: {exc}", show_alert=True)
             return
-        _pending_reschedule[callback.from_user.id] = {
+        _pending_text_action[callback.from_user.id] = {
+            "kind": "reschedule",
             "task_id": task_id,
             "ctx": ctx,
             "chat_id": callback.message.chat.id,
@@ -251,17 +301,90 @@ async def cb_pick(callback: CallbackQuery, user_store: UserStore, cipher: TokenC
         await callback.answer()
         return
 
+    if action == "priority":
+        await callback.message.edit_reply_markup(reply_markup=priority_picker_keyboard(task_id, ctx))
+        await callback.answer()
+        return
+
+    if action == "rename":
+        try:
+            task = await client.get_task(task_id)
+        except VikunjaAPIError as exc:
+            await callback.answer(f"Error: {exc}", show_alert=True)
+            return
+        _pending_text_action[callback.from_user.id] = {
+            "kind": "rename",
+            "task_id": task_id,
+            "ctx": ctx,
+            "chat_id": callback.message.chat.id,
+            "message_id": callback.message.message_id,
+            "set_at": time.monotonic(),
+        }
+        await callback.message.edit_text(
+            f"✏️ Reply with the new title for '{task['title']}'.",
+            reply_markup=cancel_pending_keyboard(ctx),
+        )
+        await callback.answer()
+        return
+
+    if action == "delete":
+        try:
+            task = await client.get_task(task_id)
+        except VikunjaAPIError as exc:
+            await callback.answer(f"Error: {exc}", show_alert=True)
+            return
+        await callback.message.edit_text(
+            f"🗑 Delete '{task['title']}'? This can't be undone.",
+            reply_markup=delete_confirm_keyboard(task_id, ctx),
+        )
+        await callback.answer()
+        return
+
+    # action == "done"
     try:
-        if action == "done":
-            await client.set_done(task_id, True)
-        else:
-            await client.delete_task(task_id)
+        await client.set_done(task_id, True)
         await _refresh_list_message(callback, client, ctx, config)
     except VikunjaAPIError as exc:
         await callback.answer(f"Error: {exc}", show_alert=True)
         return
 
-    await callback.answer("Marked done ✅" if action == "done" else "Deleted 🗑")
+    await callback.answer("Marked done ✅")
+
+
+@router.callback_query(F.data.startswith("delconfirm:"))
+async def cb_delete_confirm(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
+    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
+    if client is None:
+        await callback.answer("You're not registered.", show_alert=True)
+        return
+
+    _, task_id_str, ctx = callback.data.split(":", 2)
+    try:
+        await client.delete_task(int(task_id_str))
+        await _refresh_list_message(callback, client, ctx, config)
+    except VikunjaAPIError as exc:
+        await callback.answer(f"Error: {exc}", show_alert=True)
+        return
+
+    await callback.answer("Deleted 🗑")
+
+
+@router.callback_query(F.data.startswith("setprio:"))
+async def cb_set_priority(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
+    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
+    if client is None:
+        await callback.answer("You're not registered.", show_alert=True)
+        return
+
+    _, value_str, task_id_str, ctx = callback.data.split(":", 3)
+    try:
+        await client.set_priority(int(task_id_str), int(value_str))
+        await _refresh_list_message(callback, client, ctx, config)
+    except VikunjaAPIError as exc:
+        await callback.answer(f"Error: {exc}", show_alert=True)
+        return
+
+    await callback.answer("Priority updated")
 
 
 @router.callback_query(F.data.startswith("resched_clear:"))
@@ -272,7 +395,7 @@ async def cb_reschedule_clear(callback: CallbackQuery, user_store: UserStore, ci
         return
 
     _, task_id_str, ctx = callback.data.split(":", 2)
-    _pending_reschedule.pop(callback.from_user.id, None)
+    _pending_text_action.pop(callback.from_user.id, None)
     try:
         await client.set_due_date(int(task_id_str), None)
         await _refresh_list_message(callback, client, ctx, config)
@@ -283,15 +406,15 @@ async def cb_reschedule_clear(callback: CallbackQuery, user_store: UserStore, ci
     await callback.answer("Due date removed 🚫")
 
 
-@router.callback_query(F.data.startswith("resched_cancel:"))
-async def cb_reschedule_cancel(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
+@router.callback_query(F.data.startswith("pending_cancel:"))
+async def cb_pending_cancel(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
     client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
     if client is None:
         await callback.answer("You're not registered.", show_alert=True)
         return
 
     _, ctx = callback.data.split(":", 1)
-    _pending_reschedule.pop(callback.from_user.id, None)
+    _pending_text_action.pop(callback.from_user.id, None)
     try:
         await _refresh_list_message(callback, client, ctx, config)
     except VikunjaAPIError as exc:

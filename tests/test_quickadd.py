@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from bot.quickadd import parse, parse_date_only
+from bot.quickadd import describe_repeat, parse, parse_date_only
 
 BASE = datetime(2026, 7, 15, 9, 0)
 
@@ -75,3 +75,45 @@ def test_parse_date_only_returns_none_for_gibberish():
 
 def test_parse_date_only_returns_none_for_empty_text():
     assert parse_date_only("", relative_base=BASE) is None
+
+
+def test_repeat_monthly():
+    result = parse("Clean dishwasher filter ~monthly")
+    assert result.title == "Clean dishwasher filter"
+    assert result.repeat_after is None
+    assert result.repeat_mode == 1
+    assert describe_repeat(result.repeat_after, result.repeat_mode) == "monthly"
+
+
+def test_repeat_daily():
+    result = parse("Water plants ~daily")
+    assert result.title == "Water plants"
+    assert result.repeat_after == 86400
+    assert result.repeat_mode == 3
+
+
+def test_repeat_weekly():
+    result = parse("Take out recycling ~weekly")
+    assert result.repeat_after == 7 * 86400
+    assert result.repeat_mode == 3
+
+
+def test_repeat_every_n_days():
+    result = parse("Check dehumidifier ~every 3 days")
+    assert result.title == "Check dehumidifier"
+    assert result.repeat_after == 3 * 86400
+    assert result.repeat_mode == 3
+    assert describe_repeat(result.repeat_after, result.repeat_mode) == "every 3 days"
+
+
+def test_repeat_every_n_weeks():
+    result = parse("Mow lawn ~every 2 weeks")
+    assert result.repeat_after == 2 * 7 * 86400
+    assert describe_repeat(result.repeat_after, result.repeat_mode) == "every 2 weeks"
+
+
+def test_no_repeat_by_default():
+    result = parse("Buy milk")
+    assert result.repeat_after is None
+    assert result.repeat_mode is None
+    assert describe_repeat(result.repeat_after, result.repeat_mode) is None

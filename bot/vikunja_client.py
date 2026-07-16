@@ -60,12 +60,18 @@ class VikunjaClient:
         title: str,
         due_date: Optional[datetime] = None,
         priority: Optional[int] = None,
+        repeat_after: Optional[int] = None,
+        repeat_mode: Optional[int] = None,
     ) -> dict:
         payload = {"title": title}
         if due_date is not None:
             payload["due_date"] = due_date.strftime("%Y-%m-%dT%H:%M:%SZ")
         if priority is not None:
             payload["priority"] = priority
+        if repeat_mode is not None:
+            payload["repeat_mode"] = repeat_mode
+            if repeat_after is not None:
+                payload["repeat_after"] = repeat_after
         return await self._request("PUT", f"/projects/{project_id}/tasks", json=payload)
 
     async def get_task(self, task_id: int) -> dict:
@@ -77,6 +83,12 @@ class VikunjaClient:
     async def set_due_date(self, task_id: int, due_date: Optional[datetime]) -> dict:
         payload = {"due_date": due_date.strftime("%Y-%m-%dT%H:%M:%SZ") if due_date else None}
         return await self._request("POST", f"/tasks/{task_id}", json=payload)
+
+    async def set_priority(self, task_id: int, priority: int) -> dict:
+        return await self._request("POST", f"/tasks/{task_id}", json={"priority": priority})
+
+    async def set_title(self, task_id: int, title: str) -> dict:
+        return await self._request("POST", f"/tasks/{task_id}", json={"title": title})
 
     async def delete_task(self, task_id: int) -> None:
         await self._request("DELETE", f"/tasks/{task_id}")
