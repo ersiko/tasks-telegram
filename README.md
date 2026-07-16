@@ -90,15 +90,20 @@ these resources, only "read one" / "read all" — grant at least:
 - Tasks: **read all** (`/list` and `/today` hit the list-all endpoint and get
   a 401 without this), create, update, delete
 - Projects: read all
+- **Project Views: read all** (its own section, separate from "Projects") —
+  needed by `/list <project>` and `/plan_week`, which resolve a project's
+  view before listing its tasks
 - Labels: read all, create
 
 Granting everything (read one, update bulk, duplicate, position, etc.) is
 fine too — this is a small personal tool, not a multi-tenant service, so
 there's little reason to fuss over least-privilege here.
 
-Copy the generated token. If `/list` or `/today` come back with a 401
-"invalid token" error but `/projects` works fine, it's almost always a
-missing "read all" permission — re-create the token with it checked.
+Copy the generated token. If a command comes back with a 401 "invalid
+token" error on one specific endpoint while others work fine, it's almost
+always a missing permission for that specific route — Vikunja's token
+permissions are more granular than the top-level resource names suggest
+(e.g. "Project Views" is separate from "Projects").
 
 ### 7. Register each user
 
