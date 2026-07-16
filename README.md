@@ -82,11 +82,14 @@ run `docker compose up -d --build` from that folder.
 
 In Vikunja: **Settings → API Tokens → Create**. Grant at least:
 
-- Tasks: read, create, update, delete
-- Projects: read
-- Labels: read, create
+- Tasks: **read all** (not just "read one" — `/list` and `/today` hit the
+  list-all endpoints and get a 401 without this), create, update, delete
+- Projects: read all
+- Labels: read all, create
 
-Copy the generated token.
+Copy the generated token. If `/list` or `/today` come back with a 401
+"invalid token" error but `/projects` works fine, this is almost always the
+cause — re-create the token with the "all" variants checked.
 
 ### 7. Register each user
 
