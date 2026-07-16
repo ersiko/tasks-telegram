@@ -8,6 +8,7 @@ from aiogram.enums import ParseMode
 from bot.config import load_config
 from bot.crypto import TokenCipher
 from bot.db import UserStore
+from bot.digest import run_digest_loop
 from bot.handlers import admin, projects, start, tasks
 
 
@@ -26,6 +27,7 @@ async def main() -> None:
     dp.include_router(tasks.router)
 
     await bot.delete_webhook(drop_pending_updates=True)
+    asyncio.create_task(run_digest_loop(bot, user_store, cipher, config))
     await dp.start_polling(bot, user_store=user_store, cipher=cipher, config=config)
 
 

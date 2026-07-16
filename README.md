@@ -7,8 +7,9 @@ the source of truth and still has its normal web/mobile apps — this bot is
 just an additional way in.
 
 Users don't self-register: the admin creates a Vikunja API token for each
-person and registers it with the bot via `/adduser`. There's no reminder/
-notification scheduler in v1 — this is a pull-based interface (add/list/done).
+person and registers it with the bot via `/adduser`. Besides responding to
+commands, it also proactively sends each user a morning digest of tasks due
+today or overdue (see "Morning digest" below).
 
 ## How it works
 
@@ -44,7 +45,10 @@ key plus `users.json` can decrypt everyone's Vikunja tokens.
 ### 4. Configure `.env`
 
 Copy `.env.example` to `.env` and fill in `BOT_TOKEN`, `VIKUNJA_URL` (include
-the `/api/v1` suffix), `ADMIN_TELEGRAM_ID`, and `FERNET_KEY`.
+the `/api/v1` suffix), `ADMIN_TELEGRAM_ID`, and `FERNET_KEY`. Also set
+`DIGEST_TIMEZONE` to your actual IANA timezone (e.g. `Europe/Madrid`) —
+it defaults to UTC, so `DIGEST_TIME` would otherwise fire at the wrong
+local hour.
 
 ### 5. Run it
 
@@ -137,11 +141,28 @@ Multi-word labels/projects can be quoted: `*"home repair" +"Household Chores"`.
 - `/help` — quick-add syntax + command list
 - `/adduser`, `/removeuser`, `/users` — admin only
 
-Each listed/created task gets inline **✅ Done** / **🗑 Delete** buttons.
+`/list` (with no project given) and `/today` show tasks from multiple
+projects grouped under a `📁 Project` header; `/list <project>` stays a flat
+list since the project's already implied. Each of these sends one message
+with **✅ Mark Done** / **🗑 Delete** buttons — tapping either swaps to a
+per-task picker (titles as buttons) to complete the action, then the message
+refreshes back to the list in place. A freshly created task's confirmation
+message instead gets direct Done/Delete buttons for that one task, since
+there's nothing to pick from.
+
+## Morning digest
+
+Every day at `DIGEST_TIME` (in `DIGEST_TIMEZONE`), each registered user gets
+a push message with their tasks due today or overdue, grouped by project —
+the same view as `/today`, sent proactively rather than on request. Anyone
+with nothing due that day gets no message at all, so it doesn't become daily
+noise. It runs as a background loop inside the same bot process (no separate
+scheduler/cron needed) and reads `DIGEST_TIME`/`DIGEST_TIMEZONE` from `.env`.
 
 ## Known limitations (v1)
 
-- No proactive reminders — you have to ask (`/today`, `/list`).
+- The digest time/timezone is global (one schedule for everyone), not
+  per-user.
 - The due-date parser (`dateparser`) can occasionally misread part of a title
   as a date on ambiguous input. Check the confirmation reply after adding a
   task; use the 🗑 button to undo a bad parse and rephrase.

@@ -1,5 +1,3 @@
-import datetime as dt
-
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import CallbackQuery, Message
@@ -10,102 +8,22 @@ from bot.config import Config
 from bot.crypto import TokenCipher
 from bot.db import UserStore
 from bot.keyboards import list_menu_keyboard, task_picker_keyboard, task_row_keyboard
+from bot.task_view import format_task_list_text, ordered_tasks
 from bot.vikunja_client import VikunjaAPIError, VikunjaClient
 
 router = Router(name="tasks")
 
-MAX_LISTED_TASKS = 20
-
-
-def _format_due(due_date: str | None) -> str:
-    if not due_date or due_date.startswith("0001"):
-        return ""
-    try:
-        parsed = dt.datetime.fromisoformat(due_date.replace("Z", "+00:00")).replace(tzinfo=None)
-    except ValueError:
-        return ""
-    return f" (due {parsed.strftime('%a %d %b %H:%M')})"
-
-
-def _empty_message_for_ctx(ctx: str) -> str:
-    return "Nothing due today. 🎉" if ctx == "t" else "No open tasks. 🎉"
-
-
-async def _get_tasks_for_ctx(client: VikunjaClient, ctx: str) -> list[dict]:
-    if ctx == "t":
-        tasks = await client.list_tasks()
-        today_end = dt.datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=0)
-        due_today = []
-        for task in tasks:
-            due = task.get("due_date")
-            if not due or due.startswith("0001"):
-                continue
-            try:
-                due_dt = dt.datetime.fromisoformat(due.replace("Z", "+00:00")).replace(tzinfo=None)
-            except ValueError:
-                continue
-            if due_dt <= today_end:
-                due_today.append((due_dt, task))
-        due_today.sort(key=lambda pair: pair[0])
-        return [task for _, task in due_today[:MAX_LISTED_TASKS]]
-
-    project_id = int(ctx[1:]) if ctx.startswith("p") else None
-    tasks = await client.list_tasks(project_id=project_id)
-    tasks = sorted(tasks, key=lambda t: t.get("due_date") or "9999")
-    return tasks[:MAX_LISTED_TASKS]
-
-
-async def _project_titles(client: VikunjaClient) -> dict[int, str]:
-    projects = await client.list_projects()
-    return {p["id"]: p["title"] for p in projects}
-
-
-async def _ordered_tasks(client: VikunjaClient, ctx: str) -> tuple[list[dict], dict[int, str] | None]:
-    """Fetch tasks for ctx; for multi-project views, group them by project.
-
-    Returns (tasks, project_titles) - project_titles is None for a
-    single-project view (ctx starts with "p"), since grouping there would
-    be redundant. The same ordering drives both the displayed text and the
-    picker keyboard, so buttons line up with what's on screen.
-    """
-    tasks = await _get_tasks_for_ctx(client, ctx)
-    if not tasks or ctx.startswith("p"):
-        return tasks, None
-    titles = await _project_titles(client)
-    tasks = sorted(tasks, key=lambda t: titles.get(t.get("project_id"), "").lower())
-    return tasks, titles
-
-
-def _format_task_list_text(tasks: list[dict], ctx: str, project_titles: dict[int, str] | None) -> str:
-    if not tasks:
-        return _empty_message_for_ctx(ctx)
-
-    if not project_titles:
-        return "\n".join(f"{i}. {t['title']}{_format_due(t.get('due_date'))}" for i, t in enumerate(tasks, start=1))
-
-    lines: list[str] = []
-    current_project = None
-    for i, task in enumerate(tasks, start=1):
-        project_title = project_titles.get(task.get("project_id"), "Unknown")
-        if project_title != current_project:
-            if lines:
-                lines.append("")
-            lines.append(f"📁 {project_title}")
-            current_project = project_title
-        lines.append(f"{i}. {task['title']}{_format_due(task.get('due_date'))}")
-    return "\n".join(lines)
-
 
 async def _send_task_list(message: Message, client: VikunjaClient, ctx: str):
-    tasks, titles = await _ordered_tasks(client, ctx)
-    text = _format_task_list_text(tasks, ctx, titles)
+    tasks, titles = await ordered_tasks(client, ctx)
+    text = format_task_list_text(tasks, ctx, titles)
     kb = list_menu_keyboard(ctx) if tasks else None
     await message.answer(text, reply_markup=kb)
 
 
 async def _refresh_list_message(callback: CallbackQuery, client: VikunjaClient, ctx: str) -> None:
-    tasks, titles = await _ordered_tasks(client, ctx)
-    text = _format_task_list_text(tasks, ctx, titles)
+    tasks, titles = await ordered_tasks(client, ctx)
+    text = format_task_list_text(tasks, ctx, titles)
     kb = list_menu_keyboard(ctx) if tasks else None
     await callback.message.edit_text(text, reply_markup=kb)
 
@@ -200,7 +118,7 @@ async def cb_menu(callback: CallbackQuery, user_store: UserStore, cipher: TokenC
 
     _, action, ctx = callback.data.split(":", 2)
     try:
-        tasks, _ = await _ordered_tasks(client, ctx)
+        tasks, _ = await ordered_tasks(client, ctx)
     except VikunjaAPIError as exc:
         await callback.answer(f"Error: {exc}", show_alert=True)
         return
