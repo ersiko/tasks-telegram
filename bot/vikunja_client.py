@@ -40,11 +40,24 @@ class VikunjaClient:
                 return project
         return None
 
+    async def _resolve_list_view(self, project_id: int) -> int:
+        views = await self._request("GET", f"/projects/{project_id}/views") or []
+        for view in views:
+            if view.get("view_kind") == "list":
+                return view["id"]
+        if views:
+            return views[0]["id"]
+        raise VikunjaAPIError(f"Project {project_id} has no views")
+
     async def list_tasks(self, project_id: Optional[int] = None, include_done: bool = False) -> list[dict]:
         params = {}
         if not include_done:
             params["filter"] = "done = false"
-        path = f"/projects/{project_id}/tasks" if project_id is not None else "/tasks/all"
+        if project_id is not None:
+            view_id = await self._resolve_list_view(project_id)
+            path = f"/projects/{project_id}/views/{view_id}/tasks"
+        else:
+            path = "/tasks"
         return await self._request("GET", path, params=params) or []
 
     async def create_task(
