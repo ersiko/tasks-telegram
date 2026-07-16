@@ -9,8 +9,8 @@ from bot.access import UNREGISTERED_MESSAGE, get_client_for_user
 from bot.config import Config
 from bot.crypto import TokenCipher
 from bot.db import UserStore
-from bot.keyboards import task_row_keyboard
-from bot.vikunja_client import VikunjaAPIError
+from bot.keyboards import list_menu_keyboard, task_picker_keyboard, task_row_keyboard
+from bot.vikunja_client import VikunjaAPIError, VikunjaClient
 
 router = Router(name="tasks")
 
@@ -27,6 +27,54 @@ def _format_due(due_date: str | None) -> str:
     return f" (due {parsed.strftime('%a %d %b %H:%M')})"
 
 
+def _empty_message_for_ctx(ctx: str) -> str:
+    return "Nothing due today. 🎉" if ctx == "t" else "No open tasks. 🎉"
+
+
+async def _get_tasks_for_ctx(client: VikunjaClient, ctx: str) -> list[dict]:
+    if ctx == "t":
+        tasks = await client.list_tasks()
+        today_end = dt.datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=0)
+        due_today = []
+        for task in tasks:
+            due = task.get("due_date")
+            if not due or due.startswith("0001"):
+                continue
+            try:
+                due_dt = dt.datetime.fromisoformat(due.replace("Z", "+00:00")).replace(tzinfo=None)
+            except ValueError:
+                continue
+            if due_dt <= today_end:
+                due_today.append((due_dt, task))
+        due_today.sort(key=lambda pair: pair[0])
+        return [task for _, task in due_today[:MAX_LISTED_TASKS]]
+
+    project_id = int(ctx[1:]) if ctx.startswith("p") else None
+    tasks = await client.list_tasks(project_id=project_id)
+    tasks = sorted(tasks, key=lambda t: t.get("due_date") or "9999")
+    return tasks[:MAX_LISTED_TASKS]
+
+
+def _format_task_list_text(tasks: list[dict], ctx: str) -> str:
+    if not tasks:
+        return _empty_message_for_ctx(ctx)
+    return "\n".join(f"{i}. {t['title']}{_format_due(t.get('due_date'))}" for i, t in enumerate(tasks, start=1))
+
+
+async def _send_task_list(message: Message, client: VikunjaClient, ctx: str):
+    tasks = await _get_tasks_for_ctx(client, ctx)
+    text = _format_task_list_text(tasks, ctx)
+    kb = list_menu_keyboard(ctx) if tasks else None
+    await message.answer(text, reply_markup=kb)
+
+
+async def _refresh_list_message(callback: CallbackQuery, client: VikunjaClient, ctx: str) -> None:
+    tasks = await _get_tasks_for_ctx(client, ctx)
+    text = _format_task_list_text(tasks, ctx)
+    kb = list_menu_keyboard(ctx) if tasks else None
+    await callback.message.edit_text(text, reply_markup=kb)
+
+
 @router.message(Command("list"))
 async def cmd_list(message: Message, command: CommandObject, user_store: UserStore, cipher: TokenCipher, config: Config):
     client = await get_client_for_user(message.from_user.id, user_store, cipher, config)
@@ -34,30 +82,18 @@ async def cmd_list(message: Message, command: CommandObject, user_store: UserSto
         await message.answer(UNREGISTERED_MESSAGE.format(user_id=message.from_user.id), parse_mode="Markdown")
         return
 
-    project_id = None
+    ctx = "a"
     if command.args:
         project = await client.resolve_project(command.args.strip())
         if project is None:
             await message.answer(f"No project matching '{command.args.strip()}'.")
             return
-        project_id = project["id"]
+        ctx = f"p{project['id']}"
 
     try:
-        tasks = await client.list_tasks(project_id=project_id)
+        await _send_task_list(message, client, ctx)
     except VikunjaAPIError as exc:
         await message.answer(f"Vikunja error: {exc}")
-        return
-
-    if not tasks:
-        await message.answer("No open tasks. 🎉")
-        return
-
-    tasks = sorted(tasks, key=lambda t: t.get("due_date") or "9999")[:MAX_LISTED_TASKS]
-    for task in tasks:
-        await message.answer(
-            f"{task['title']}{_format_due(task.get('due_date'))}",
-            reply_markup=task_row_keyboard(task["id"]),
-        )
 
 
 @router.message(Command("today"))
@@ -68,34 +104,9 @@ async def cmd_today(message: Message, user_store: UserStore, cipher: TokenCipher
         return
 
     try:
-        tasks = await client.list_tasks()
+        await _send_task_list(message, client, "t")
     except VikunjaAPIError as exc:
         await message.answer(f"Vikunja error: {exc}")
-        return
-
-    today_end = dt.datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=0)
-    due_today = []
-    for task in tasks:
-        due = task.get("due_date")
-        if not due or due.startswith("0001"):
-            continue
-        try:
-            due_dt = dt.datetime.fromisoformat(due.replace("Z", "+00:00")).replace(tzinfo=None)
-        except ValueError:
-            continue
-        if due_dt <= today_end:
-            due_today.append((due_dt, task))
-
-    if not due_today:
-        await message.answer("Nothing due today. 🎉")
-        return
-
-    due_today.sort(key=lambda pair: pair[0])
-    for due_dt, task in due_today[:MAX_LISTED_TASKS]:
-        await message.answer(
-            f"{task['title']} (due {due_dt.strftime('%a %d %b %H:%M')})",
-            reply_markup=task_row_keyboard(task["id"]),
-        )
 
 
 @router.message(F.text & ~F.text.startswith("/"))
@@ -143,6 +154,66 @@ async def handle_quick_add(message: Message, user_store: UserStore, cipher: Toke
         await message.answer("\n".join(summary), reply_markup=task_row_keyboard(task["id"]))
     except VikunjaAPIError as exc:
         await message.answer(f"Vikunja rejected that: {exc}")
+
+
+@router.callback_query(F.data.startswith("menu:"))
+async def cb_menu(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
+    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
+    if client is None:
+        await callback.answer("You're not registered.", show_alert=True)
+        return
+
+    _, action, ctx = callback.data.split(":", 2)
+    try:
+        tasks = await _get_tasks_for_ctx(client, ctx)
+    except VikunjaAPIError as exc:
+        await callback.answer(f"Error: {exc}", show_alert=True)
+        return
+
+    if not tasks:
+        await callback.answer("Nothing left to pick.", show_alert=True)
+        return
+
+    await callback.message.edit_reply_markup(reply_markup=task_picker_keyboard(tasks, action, ctx))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("back:"))
+async def cb_back(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
+    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
+    if client is None:
+        await callback.answer("You're not registered.", show_alert=True)
+        return
+
+    _, ctx = callback.data.split(":", 1)
+    try:
+        await _refresh_list_message(callback, client, ctx)
+    except VikunjaAPIError as exc:
+        await callback.answer(f"Error: {exc}", show_alert=True)
+        return
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pick:"))
+async def cb_pick(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
+    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
+    if client is None:
+        await callback.answer("You're not registered.", show_alert=True)
+        return
+
+    _, action, ctx, task_id_str = callback.data.split(":", 3)
+    task_id = int(task_id_str)
+    try:
+        if action == "done":
+            await client.set_done(task_id, True)
+        else:
+            await client.delete_task(task_id)
+        await _refresh_list_message(callback, client, ctx)
+    except VikunjaAPIError as exc:
+        await callback.answer(f"Error: {exc}", show_alert=True)
+        return
+
+    await callback.answer("Marked done ✅" if action == "done" else "Deleted 🗑")
 
 
 @router.callback_query(F.data.startswith("done:"))
