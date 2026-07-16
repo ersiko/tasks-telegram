@@ -40,25 +40,19 @@ class VikunjaClient:
                 return project
         return None
 
-    async def _resolve_list_view(self, project_id: int) -> int:
-        views = await self._request("GET", f"/projects/{project_id}/views") or []
-        for view in views:
-            if view.get("view_kind") == "list":
-                return view["id"]
-        if views:
-            return views[0]["id"]
-        raise VikunjaAPIError(f"Project {project_id} has no views")
-
     async def list_tasks(self, project_id: Optional[int] = None, include_done: bool = False) -> list[dict]:
-        params = {}
+        # Filtering the global /tasks endpoint by project_id, rather than
+        # using /projects/{id}/views/{view}/tasks, sidesteps a Vikunja
+        # permission gap: that view-scoped endpoint 401s even with full
+        # Tasks + Project Views permissions granted (confirmed live against
+        # this instance) - a distinct, seemingly ungrantable permission.
+        filters = []
         if not include_done:
-            params["filter"] = "done = false"
+            filters.append("done = false")
         if project_id is not None:
-            view_id = await self._resolve_list_view(project_id)
-            path = f"/projects/{project_id}/views/{view_id}/tasks"
-        else:
-            path = "/tasks"
-        return await self._request("GET", path, params=params) or []
+            filters.append(f"project_id = {project_id}")
+        params = {"filter": " && ".join(filters)} if filters else {}
+        return await self._request("GET", "/tasks", params=params) or []
 
     async def create_task(
         self,
