@@ -74,8 +74,15 @@ class VikunjaClient:
             payload["priority"] = priority
         return await self._request("PUT", f"/projects/{project_id}/tasks", json=payload)
 
+    async def get_task(self, task_id: int) -> dict:
+        return await self._request("GET", f"/tasks/{task_id}")
+
     async def set_done(self, task_id: int, done: bool = True) -> dict:
         return await self._request("POST", f"/tasks/{task_id}", json={"done": done})
+
+    async def set_due_date(self, task_id: int, due_date: Optional[datetime]) -> dict:
+        payload = {"due_date": due_date.strftime("%Y-%m-%dT%H:%M:%SZ") if due_date else None}
+        return await self._request("POST", f"/tasks/{task_id}", json=payload)
 
     async def delete_task(self, task_id: int) -> None:
         await self._request("DELETE", f"/tasks/{task_id}")

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from bot.quickadd import parse
+from bot.quickadd import parse, parse_date_only
 
 BASE = datetime(2026, 7, 15, 9, 0)
 
@@ -61,3 +61,17 @@ def test_quoted_multi_word_label_and_project():
     assert result.title == "Call plumber"
     assert result.labels == ["home repair"]
     assert result.project == "Household Chores"
+
+
+def test_parse_date_only_finds_a_date():
+    due = parse_date_only("friday 5pm", relative_base=BASE)
+    assert due is not None
+    assert due.hour == 17
+
+
+def test_parse_date_only_returns_none_for_gibberish():
+    assert parse_date_only("asdkfjadsf", relative_base=BASE) is None
+
+
+def test_parse_date_only_returns_none_for_empty_text():
+    assert parse_date_only("", relative_base=BASE) is None

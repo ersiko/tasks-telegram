@@ -146,11 +146,19 @@ Multi-word labels/projects can be quoted: `*"home repair" +"Household Chores"`.
 `/list` (with no project given), `/today`, and `/week` show tasks from
 multiple projects grouped under a `📁 Project` header; `/list <project>`
 stays a flat list since the project's already implied. Each of these sends
-one message with **✅ Mark Done** / **🗑 Delete** buttons — tapping either
-swaps to a per-task picker (titles as buttons) to complete the action, then
-the message refreshes back to the list in place. A freshly created task's
-confirmation message instead gets direct Done/Delete buttons for that one
-task, since there's nothing to pick from.
+one message with **✅ Mark Done** / **🗑 Delete** / **📅 Reschedule** buttons —
+tapping any of them swaps to a per-task picker (titles as buttons) to pick
+which task, then:
+
+- Done/Delete apply immediately and the message refreshes back to the list.
+- Reschedule prompts you to reply with a new date (e.g. "friday 5pm", "next
+  monday" — same natural-language parser as quick-add), or tap **🚫 Remove
+  due date** to clear it instead. Replying "none" also clears it. The prompt
+  expires after 10 minutes if you never reply, so an abandoned reschedule
+  can't hijack your next quick-add message.
+
+A freshly created task's confirmation message instead gets direct Done/Delete
+buttons for that one task, since there's nothing to pick from.
 
 ## Morning digest
 
@@ -165,6 +173,11 @@ scheduler/cron needed) and reads `DIGEST_TIME`/`TIMEZONE` from `.env`.
 
 - The digest time/timezone is global (one schedule for everyone), not
   per-user.
+- "Remove due date" sends `due_date: null` to Vikunja's update endpoint,
+  which is the standard REST way to clear a field - not yet confirmed
+  against a live task, since earlier endpoint quirks on this exact Vikunja
+  version (see git history) mean it's worth verifying once used for real.
+  If it errors instead of clearing, that's the first place to look.
 - The due-date parser (`dateparser`) can occasionally misread part of a title
   as a date on ambiguous input. Check the confirmation reply after adding a
   task; use the 🗑 button to undo a bad parse and rephrase.

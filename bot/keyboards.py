@@ -18,7 +18,10 @@ def list_menu_keyboard(ctx: str) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="✅ Mark Done", callback_data=f"menu:done:{ctx}"),
                 InlineKeyboardButton(text="🗑 Delete", callback_data=f"menu:delete:{ctx}"),
-            ]
+            ],
+            [
+                InlineKeyboardButton(text="📅 Reschedule", callback_data=f"menu:reschedule:{ctx}"),
+            ],
         ]
     )
 
@@ -30,3 +33,12 @@ def task_picker_keyboard(tasks: list[dict], action: str, ctx: str) -> InlineKeyb
     ]
     rows.append([InlineKeyboardButton(text="‹ Back", callback_data=f"back:{ctx}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def reschedule_prompt_keyboard(task_id: int, ctx: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🚫 Remove due date", callback_data=f"resched_clear:{task_id}:{ctx}")],
+            [InlineKeyboardButton(text="‹ Cancel", callback_data=f"resched_cancel:{ctx}")],
+        ]
+    )

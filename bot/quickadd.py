@@ -42,6 +42,25 @@ def _extract_one(pattern: re.Pattern, text: str) -> tuple[Optional[str], str]:
     return _match_value(match), remaining
 
 
+def _search_date(text: str, relative_base: Optional[datetime]) -> Optional[tuple[str, datetime]]:
+    settings = {"PREFER_DATES_FROM": "future"}
+    if relative_base is not None:
+        settings["RELATIVE_BASE"] = relative_base
+    matches = search_dates(text, languages=["en"], settings=settings)
+    if not matches:
+        return None
+    matched_text, parsed_dt = matches[-1]
+    if len(matched_text.strip()) < 3:
+        return None
+    return matched_text, parsed_dt
+
+
+def parse_date_only(text: str, relative_base: Optional[datetime] = None) -> Optional[datetime]:
+    """Parse a natural-language date/time out of free text with no quick-add magic expected."""
+    match = _search_date(text.strip(), relative_base)
+    return match[1] if match else None
+
+
 def parse(text: str, relative_base: Optional[datetime] = None) -> QuickAddResult:
     working = text
 
@@ -59,17 +78,12 @@ def parse(text: str, relative_base: Optional[datetime] = None) -> QuickAddResult
 
     due_date = None
     if working:
-        settings = {"PREFER_DATES_FROM": "future"}
-        if relative_base is not None:
-            settings["RELATIVE_BASE"] = relative_base
-        matches = search_dates(working, languages=["en"], settings=settings)
-        if matches:
-            matched_text, parsed_dt = matches[-1]
-            if len(matched_text.strip()) >= 3:
-                due_date = parsed_dt
-                start = working.rfind(matched_text)
-                if start != -1:
-                    working = working[:start] + working[start + len(matched_text):]
+        found = _search_date(working, relative_base)
+        if found:
+            matched_text, due_date = found
+            start = working.rfind(matched_text)
+            if start != -1:
+                working = working[:start] + working[start + len(matched_text):]
 
     title = re.sub(r"\s+", " ", working).strip()
 
