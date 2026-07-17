@@ -12,14 +12,37 @@ class VikunjaClient:
     def __init__(self, base_url: str, token: str):
         self._base_url = base_url.rstrip("/")
         self._token = token
+        self._client: Optional[httpx.AsyncClient] = None
 
-    async def _request(self, method: str, path: str, **kwargs):
-        async with httpx.AsyncClient(
+    def _build_httpx_client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
             base_url=self._base_url,
             headers={"Authorization": f"Bearer {self._token}"},
             timeout=15.0,
-        ) as client:
-            response = await client.request(method, path, **kwargs)
+        )
+
+    async def __aenter__(self) -> "VikunjaClient":
+        # Reuses one connection across every call made within the `async
+        # with` block, instead of paying a new TCP+TLS handshake per API
+        # call - a single Telegram interaction routinely makes several
+        # (e.g. quick-add with labels: resolve project, create task,
+        # resolve + attach each label).
+        self._client = self._build_httpx_client()
+        return self
+
+    async def __aexit__(self, *exc_info) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    async def _request(self, method: str, path: str, **kwargs):
+        if self._client is not None:
+            response = await self._client.request(method, path, **kwargs)
+        else:
+            # Not used as `async with` - fall back to a one-shot connection
+            # rather than requiring every caller to open the context manager.
+            async with self._build_httpx_client() as one_shot:
+                response = await one_shot.request(method, path, **kwargs)
         if response.status_code >= 400:
             raise VikunjaAPIError(f"{method} {path} failed ({response.status_code}): {response.text[:200]}")
         if response.status_code == 204 or not response.content:

@@ -8,10 +8,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import CallbackQuery, Message
 
 from bot import quickadd
-from bot.access import UNREGISTERED_MESSAGE, get_client_for_user
 from bot.config import Config
-from bot.crypto import TokenCipher
-from bot.db import UserStore
 from bot.keyboards import (
     cancel_pending_keyboard,
     delete_confirm_keyboard,
@@ -72,12 +69,7 @@ async def _edit_original_list_message(bot, pending: dict, client: VikunjaClient,
 
 
 @router.message(Command("list"))
-async def cmd_list(message: Message, command: CommandObject, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(message.from_user.id, user_store, cipher, config)
-    if client is None:
-        await message.answer(UNREGISTERED_MESSAGE.format(user_id=message.from_user.id), parse_mode="Markdown")
-        return
-
+async def cmd_list(message: Message, command: CommandObject, client: VikunjaClient, config: Config):
     ctx = "a"
     if command.args:
         project = await client.resolve_project(command.args.strip())
@@ -93,12 +85,7 @@ async def cmd_list(message: Message, command: CommandObject, user_store: UserSto
 
 
 @router.message(Command("today"))
-async def cmd_today(message: Message, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(message.from_user.id, user_store, cipher, config)
-    if client is None:
-        await message.answer(UNREGISTERED_MESSAGE.format(user_id=message.from_user.id), parse_mode="Markdown")
-        return
-
+async def cmd_today(message: Message, client: VikunjaClient, config: Config):
     try:
         await _send_task_list(message, client, "t", config)
     except VikunjaAPIError as exc:
@@ -106,12 +93,7 @@ async def cmd_today(message: Message, user_store: UserStore, cipher: TokenCipher
 
 
 @router.message(Command("week", "this_week"))
-async def cmd_week(message: Message, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(message.from_user.id, user_store, cipher, config)
-    if client is None:
-        await message.answer(UNREGISTERED_MESSAGE.format(user_id=message.from_user.id), parse_mode="Markdown")
-        return
-
+async def cmd_week(message: Message, client: VikunjaClient, config: Config):
     try:
         await _send_task_list(message, client, "w", config)
     except VikunjaAPIError as exc:
@@ -163,12 +145,7 @@ async def _handle_rename_reply(message: Message, client: VikunjaClient, config: 
 
 
 @router.message(F.text & ~F.text.startswith("/"))
-async def handle_quick_add(message: Message, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(message.from_user.id, user_store, cipher, config)
-    if client is None:
-        await message.answer(UNREGISTERED_MESSAGE.format(user_id=message.from_user.id), parse_mode="Markdown")
-        return
-
+async def handle_quick_add(message: Message, client: VikunjaClient, config: Config):
     pending = _pop_valid_pending(message.from_user.id)
     if pending is not None:
         if pending["kind"] == "reschedule":
@@ -232,12 +209,7 @@ async def handle_quick_add(message: Message, user_store: UserStore, cipher: Toke
 
 
 @router.callback_query(F.data.startswith("menu:"))
-async def cb_menu(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
-    if client is None:
-        await callback.answer("You're not registered.", show_alert=True)
-        return
-
+async def cb_menu(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, action, ctx = callback.data.split(":", 2)
     try:
         tasks, _ = await ordered_tasks(client, ctx, config)
@@ -254,12 +226,7 @@ async def cb_menu(callback: CallbackQuery, user_store: UserStore, cipher: TokenC
 
 
 @router.callback_query(F.data.startswith("back:"))
-async def cb_back(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
-    if client is None:
-        await callback.answer("You're not registered.", show_alert=True)
-        return
-
+async def cb_back(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, ctx = callback.data.split(":", 1)
     try:
         await _refresh_list_message(callback, client, ctx, config)
@@ -270,12 +237,7 @@ async def cb_back(callback: CallbackQuery, user_store: UserStore, cipher: TokenC
 
 
 @router.callback_query(F.data.startswith("pick:"))
-async def cb_pick(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
-    if client is None:
-        await callback.answer("You're not registered.", show_alert=True)
-        return
-
+async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, action, ctx, task_id_str = callback.data.split(":", 3)
     task_id = int(task_id_str)
 
@@ -352,12 +314,7 @@ async def cb_pick(callback: CallbackQuery, user_store: UserStore, cipher: TokenC
 
 
 @router.callback_query(F.data.startswith("delconfirm:"))
-async def cb_delete_confirm(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
-    if client is None:
-        await callback.answer("You're not registered.", show_alert=True)
-        return
-
+async def cb_delete_confirm(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, task_id_str, ctx = callback.data.split(":", 2)
     try:
         await client.delete_task(int(task_id_str))
@@ -370,12 +327,7 @@ async def cb_delete_confirm(callback: CallbackQuery, user_store: UserStore, ciph
 
 
 @router.callback_query(F.data.startswith("setprio:"))
-async def cb_set_priority(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
-    if client is None:
-        await callback.answer("You're not registered.", show_alert=True)
-        return
-
+async def cb_set_priority(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, value_str, task_id_str, ctx = callback.data.split(":", 3)
     try:
         await client.set_priority(int(task_id_str), int(value_str))
@@ -388,12 +340,7 @@ async def cb_set_priority(callback: CallbackQuery, user_store: UserStore, cipher
 
 
 @router.callback_query(F.data.startswith("resched_clear:"))
-async def cb_reschedule_clear(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
-    if client is None:
-        await callback.answer("You're not registered.", show_alert=True)
-        return
-
+async def cb_reschedule_clear(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, task_id_str, ctx = callback.data.split(":", 2)
     _pending_text_action.pop(callback.from_user.id, None)
     try:
@@ -407,12 +354,7 @@ async def cb_reschedule_clear(callback: CallbackQuery, user_store: UserStore, ci
 
 
 @router.callback_query(F.data.startswith("pending_cancel:"))
-async def cb_pending_cancel(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
-    if client is None:
-        await callback.answer("You're not registered.", show_alert=True)
-        return
-
+async def cb_pending_cancel(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, ctx = callback.data.split(":", 1)
     _pending_text_action.pop(callback.from_user.id, None)
     try:
@@ -425,11 +367,7 @@ async def cb_pending_cancel(callback: CallbackQuery, user_store: UserStore, ciph
 
 
 @router.callback_query(F.data.startswith("done:"))
-async def cb_done(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
-    if client is None:
-        await callback.answer("You're not registered.", show_alert=True)
-        return
+async def cb_done(callback: CallbackQuery, client: VikunjaClient, config: Config):
     task_id = int(callback.data.split(":", 1)[1])
     try:
         await client.set_done(task_id, True)
@@ -441,11 +379,7 @@ async def cb_done(callback: CallbackQuery, user_store: UserStore, cipher: TokenC
 
 
 @router.callback_query(F.data.startswith("del:"))
-async def cb_delete(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
-    if client is None:
-        await callback.answer("You're not registered.", show_alert=True)
-        return
+async def cb_delete(callback: CallbackQuery, client: VikunjaClient, config: Config):
     task_id = int(callback.data.split(":", 1)[1])
     try:
         await client.delete_task(task_id)

@@ -2,10 +2,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
-from bot.access import UNREGISTERED_MESSAGE, get_client_for_user
 from bot.config import Config
-from bot.crypto import TokenCipher
-from bot.db import UserStore
 from bot.keyboards import plan_week_keyboard
 from bot.task_view import format_due, get_planning_candidates, week_end
 from bot.vikunja_client import VikunjaAPIError, VikunjaClient
@@ -39,12 +36,7 @@ async def _refresh_plan_week_message(
 
 
 @router.message(Command("plan_week", "choose_weekly_tasks"))
-async def cmd_plan_week(message: Message, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(message.from_user.id, user_store, cipher, config)
-    if client is None:
-        await message.answer(UNREGISTERED_MESSAGE.format(user_id=message.from_user.id), parse_mode="Markdown")
-        return
-
+async def cmd_plan_week(message: Message, client: VikunjaClient, config: Config):
     project = await client.resolve_project(config.weekly_project_name)
     if project is None:
         await message.answer(
@@ -59,12 +51,7 @@ async def cmd_plan_week(message: Message, user_store: UserStore, cipher: TokenCi
 
 
 @router.callback_query(F.data.startswith("plan:"))
-async def cb_plan_pick(callback: CallbackQuery, user_store: UserStore, cipher: TokenCipher, config: Config):
-    client = await get_client_for_user(callback.from_user.id, user_store, cipher, config)
-    if client is None:
-        await callback.answer("You're not registered.", show_alert=True)
-        return
-
+async def cb_plan_pick(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, project_id_str, task_id_str = callback.data.split(":", 2)
     project_id = int(project_id_str)
     task_id = int(task_id_str)

@@ -34,6 +34,10 @@ Compile-check after edits (catches syntax errors without needing a live bot toke
 Docker deployment: `docker compose up -d --build` against `compose.yaml` (see "Deployment"
 below for why the filename matters).
 
+CI (`.github/workflows/tests.yml`) runs the same `pytest tests/` on every push/PR — there's
+no staging environment, Komodo deploys straight from `main`, so this is the only automated
+check before something reaches production.
+
 ## Architecture
 
 Single aiogram v3 long-polling process — no webhook, no public HTTP endpoint. Vikunja is
@@ -45,7 +49,17 @@ values encrypted at rest with a Fernet key from `FERNET_KEY`).
 
 - `bot/vikunja_client.py` — thin async wrapper over Vikunja's REST API. A `VikunjaClient` is
   constructed fresh per request with the calling user's decrypted token (see
-  `bot/access.py:get_client_for_user`); nothing is cached or shared across users.
+  `bot/access.py:get_client_for_user`); nothing is cached or shared across users. Supports
+  `async with` to reuse one `httpx.AsyncClient` connection across every call made within the
+  block (falls back to a one-shot connection if not entered) — `bot/middlewares.py` always
+  enters it, so handlers get connection reuse for free.
+- `bot/middlewares.py` — `VikunjaClientMiddleware`, applied to the `tasks`/`projects`/
+  `planning` routers in `main.py` (not `admin`/`start`, which don't need a Vikunja client).
+  Resolves the calling user's client once, short-circuits with the "not registered" message
+  if there isn't one, and injects the client as the `client` handler parameter — same
+  workflow-data-by-parameter-name mechanism aiogram already uses for `config`. Handlers in
+  those three routers should take `client: VikunjaClient` as a parameter rather than
+  resolving it themselves.
 - `bot/task_view.py` — shared "which tasks, formatted how" logic used by both the on-demand
   handlers (`/today`, `/week`, `/list`) and the proactive push in `bot/digest.py`. All
   date-boundary math ("is this due today/this week") happens here, in the configured
@@ -84,8 +98,8 @@ prefixes matched with `F.data.startswith(...)` in `bot/handlers/tasks.py`:
   just add a callback handler.
 - `back:{ctx}` / `pending_cancel:{ctx}` return to the menu view by refetching and
   re-rendering, rather than restoring prior message state.
-- Every callback handler independently re-resolves the calling user's `VikunjaClient` via
-  `get_client_for_user` — there's no shared per-request session/context object.
+- Every handler gets its `VikunjaClient` from `VikunjaClientMiddleware` (see above), not by
+  resolving it itself.
 
 ### Vikunja API quirks encoded in the client (don't simplify these away without checking why)
 

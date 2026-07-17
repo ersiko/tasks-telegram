@@ -13,12 +13,17 @@ HELP_TEXT = (
     "  +project   assign to a project (matched by name)\n"
     "  *label     add a label (repeatable)\n"
     "  !priority  low / medium / high / urgent / donow (or 1-5)\n"
+    "  ~repeat    daily / weekly / monthly / every N days / every N weeks\n"
     "  trailing text is parsed as the due date, e.g. 'friday 5pm'\n\n"
     "Commands:\n"
     "/list [project] - show open tasks\n"
     "/today - tasks due today or overdue\n"
+    "/week - tasks due this week or overdue\n"
+    "/plan_week - pick this week's goals from the backlog\n"
     "/projects - list your Vikunja projects\n"
-    "/help - show this message"
+    "/help - show this message\n\n"
+    "Each list has Mark Done / Delete / Reschedule / Priority / Rename buttons — "
+    "tap one, then pick a task."
 )
 
 

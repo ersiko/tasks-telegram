@@ -10,6 +10,7 @@ from bot.crypto import TokenCipher
 from bot.db import UserStore
 from bot.digest import run_digest_loop
 from bot.handlers import admin, planning, projects, start, tasks
+from bot.middlewares import VikunjaClientMiddleware
 
 
 async def main() -> None:
@@ -21,6 +22,15 @@ async def main() -> None:
 
     bot = Bot(token=config.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
+
+    # These three routers' handlers all need an authenticated VikunjaClient;
+    # the middleware resolves it once and injects it as the `client` param,
+    # short-circuiting with the "not registered" message if there isn't one.
+    vikunja_auth = VikunjaClientMiddleware()
+    for router in (tasks.router, projects.router, planning.router):
+        router.message.middleware(vikunja_auth)
+        router.callback_query.middleware(vikunja_auth)
+
     dp.include_router(admin.router)
     dp.include_router(start.router)
     dp.include_router(projects.router)
