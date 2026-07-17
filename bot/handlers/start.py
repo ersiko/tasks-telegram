@@ -1,3 +1,5 @@
+import html
+
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -22,6 +24,8 @@ HELP_TEXT = (
     "/plan_week - pick this week's goals from the backlog\n"
     "/recap - what's been completed so far this week\n"
     "/projects - list your Vikunja projects\n"
+    "/pause [days] - pause the digest (indefinitely, or for N days)\n"
+    "/resume - resume the digest\n"
     "/help - show this message\n\n"
     "Each list has Mark Done / Delete / Reschedule / Priority / Rename buttons — "
     "tap one, then pick a task."
@@ -38,7 +42,7 @@ async def cmd_start(message: Message, user_store: UserStore):
             parse_mode="Markdown",
         )
         return
-    await message.answer(f"Hi {user.display_name}!\n\n" + HELP_TEXT)
+    await message.answer(f"Hi {html.escape(user.display_name)}!\n\n" + HELP_TEXT)
 
 
 @router.message(Command("help"))

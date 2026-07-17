@@ -1,4 +1,5 @@
 import datetime as dt
+import html
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -27,6 +28,36 @@ def format_due(due_date: Optional[str], config: Config) -> str:
         return ""
     local = parsed.astimezone(_tz(config))
     return f" (due {local.strftime('%a %d %b %H:%M')})"
+
+
+def _days_overdue(due_date: Optional[str], config: Config, now: Optional[dt.datetime] = None) -> int:
+    parsed = _parse_due(due_date)
+    if parsed is None:
+        return 0
+    now_local = now if now is not None else dt.datetime.now(_tz(config))
+    due_local = parsed.astimezone(_tz(config))
+    return (now_local.date() - due_local.date()).days
+
+
+def _overdue_marker(days_overdue: int) -> tuple[str, bool]:
+    """(emoji prefix, bold) - escalates the more overdue a task is, so
+    something ignored for a week doesn't blend in with something a day
+    late. Not overdue (due today or later) gets no marker at all."""
+    if days_overdue <= 0:
+        return "", False
+    if days_overdue <= 2:
+        return "⚠️ ", False
+    if days_overdue <= 6:
+        return "🔴 ", True
+    return "🚨🚨 ", True
+
+
+def _format_task_line(index: int, task: dict, config: Config, now: Optional[dt.datetime] = None) -> str:
+    title = html.escape(task["title"])
+    due_str = format_due(task.get("due_date"), config)
+    prefix, bold = _overdue_marker(_days_overdue(task.get("due_date"), config, now))
+    line = f"{prefix}{index}. {title}{due_str}"
+    return f"<b>{line}</b>" if bold else line
 
 
 def empty_message_for_ctx(ctx: str) -> str:
@@ -173,13 +204,17 @@ async def ordered_tasks(client: VikunjaClient, ctx: str, config: Config) -> tupl
 
 
 def format_task_list_text(
-    tasks: list[dict], ctx: str, project_titles_map: Optional[dict[int, str]], config: Config
+    tasks: list[dict],
+    ctx: str,
+    project_titles_map: Optional[dict[int, str]],
+    config: Config,
+    now: Optional[dt.datetime] = None,
 ) -> str:
     if not tasks:
         return empty_message_for_ctx(ctx)
 
     if not project_titles_map:
-        return "\n".join(f"{i}. {t['title']}{format_due(t.get('due_date'), config)}" for i, t in enumerate(tasks, start=1))
+        return "\n".join(_format_task_line(i, t, config, now) for i, t in enumerate(tasks, start=1))
 
     lines: list[str] = []
     current_project = None
@@ -188,7 +223,7 @@ def format_task_list_text(
         if title != current_project:
             if lines:
                 lines.append("")
-            lines.append(f"📁 {title}")
+            lines.append(f"📁 {html.escape(title)}")
             current_project = title
-        lines.append(f"{i}. {task['title']}{format_due(task.get('due_date'), config)}")
+        lines.append(_format_task_line(i, task, config, now))
     return "\n".join(lines)

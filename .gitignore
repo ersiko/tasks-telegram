@@ -1,5 +1,6 @@
 .env
 users.json
+digest_pause.json
 __pycache__/
 *.pyc
 .venv/

@@ -165,6 +165,8 @@ calendar-month step instead, since a fixed day count can't handle
 - `/projects` — list your Vikunja projects
 - `/chatid` — this chat's ID (no registration needed) — for setting
   `DIGEST_CHAT_ID`
+- `/pause [days]` / `/resume` — suspend the digest (indefinitely, or for a
+  number of days), e.g. while away — see "Pausing the digest" below
 - `/help` — quick-add syntax + command list
 - `/adduser`, `/removeuser`, `/users` — admin only, `/adduser` private-chat
   only
@@ -194,6 +196,22 @@ A freshly created task's confirmation message instead gets direct Done/Delete
 buttons for that one task (no confirmation on that Delete, since it's really
 an "undo" for a task you just created seconds ago) — there's nothing to pick
 from, and no picker step is needed.
+
+### Overdue escalation
+
+Tasks get harder to miss the longer they've been overdue, wherever they're
+listed (`/list`, `/today`, `/week`, the digest):
+
+| Overdue by | Marker |
+|---|---|
+| Not overdue | (none) |
+| 1-2 days | ⚠️ prefix |
+| 3-6 days | 🔴 prefix, **bold** |
+| 7+ days | 🚨🚨 prefix, **bold** |
+
+The idea is a task that's been quietly ignored for a week should look
+noticeably different from one that's a day late, instead of blending into
+the rest of the list.
 
 ## Morning digest
 
@@ -231,6 +249,19 @@ completion time even after a recurring task auto-resets back to not-done
 for its next occurrence — plausible given the field's description, but not
 yet confirmed against a real recurring task that's gone through a full
 done/recur cycle.
+
+### Pausing the digest
+
+`/pause` suspends the digest (daily + any weekly/monthly recap sections)
+indefinitely, until you run `/resume`. `/pause <days>` instead auto-resumes
+after that many days — e.g. `/pause 10` for a ten-day trip. Useful so
+coming back from time away means one clean catch-up via `/today`/`/week`
+whenever you're ready, rather than a string of "you have N overdue tasks"
+pushes stacking up every morning you were gone.
+
+The pause state is a small file next to `users.json` (see `USERS_FILE`), so
+it survives restarts/redeploys — an intentional multi-week pause won't get
+silently cleared by the next `docker compose up`.
 
 ## Using this in a group chat
 

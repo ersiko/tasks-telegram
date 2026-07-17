@@ -1,4 +1,5 @@
 import datetime as dt
+import html
 import time
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -141,7 +142,7 @@ async def _handle_rename_reply(message: Message, client: VikunjaClient, config: 
         return
 
     await _edit_original_list_message(message.bot, pending, client, config)
-    await message.answer(f"✏️ Renamed to '{new_title}'")
+    await message.answer(f"✏️ Renamed to '{html.escape(new_title)}'")
 
 
 @router.message(F.text & ~F.text.startswith("/"))
@@ -193,9 +194,9 @@ async def handle_quick_add(message: Message, client: VikunjaClient, config: Conf
             label = await client.resolve_label(label_name)
             await client.add_label_to_task(task["id"], label["id"])
 
-        summary = [f"✅ Added: {result.title}", f"Project: {project['title']}"]
+        summary = [f"✅ Added: {html.escape(result.title)}", f"Project: {html.escape(project['title'])}"]
         if result.labels:
-            summary.append("Labels: " + ", ".join(result.labels))
+            summary.append("Labels: " + ", ".join(html.escape(label) for label in result.labels))
         if result.priority:
             summary.append(f"Priority: {result.priority}")
         if due_date:
@@ -256,7 +257,7 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
             "set_at": time.monotonic(),
         }
         await callback.message.edit_text(
-            f"📅 When should '{task['title']}' be due?\n"
+            f"📅 When should '{html.escape(task['title'])}' be due?\n"
             "Reply with a date (e.g. 'tomorrow 5pm', 'next friday'), or tap below.",
             reply_markup=reschedule_prompt_keyboard(task_id, ctx),
         )
@@ -283,7 +284,7 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
             "set_at": time.monotonic(),
         }
         await callback.message.edit_text(
-            f"✏️ Reply with the new title for '{task['title']}'.",
+            f"✏️ Reply with the new title for '{html.escape(task['title'])}'.",
             reply_markup=cancel_pending_keyboard(ctx),
         )
         await callback.answer()
@@ -296,7 +297,7 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
             await callback.answer(f"Error: {exc}", show_alert=True)
             return
         await callback.message.edit_text(
-            f"🗑 Delete '{task['title']}'? This can't be undone.",
+            f"🗑 Delete '{html.escape(task['title'])}'? This can't be undone.",
             reply_markup=delete_confirm_keyboard(task_id, ctx),
         )
         await callback.answer()

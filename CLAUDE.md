@@ -87,7 +87,12 @@ values encrypted at rest with a Fernet key from `FERNET_KEY`).
   callback-driven list/picker/action flow described below.
 - `bot/digest.py` — background `asyncio` task, started via `asyncio.create_task` in
   `main.py` alongside (not instead of) `dp.start_polling`, that wakes once a day and pushes
-  each registered user their `/today`-equivalent view via `bot.send_message`.
+  each registered user their `/today`-equivalent view via `bot.send_message`. Checks
+  `PauseStore.is_paused()` first (see below) and skips the whole run if so.
+- `bot/pause_store.py` — `PauseStore`, same tiny-JSON-file pattern as `UserStore` (a file next
+  to `users.json`), for the `/pause`/`/resume` commands (`bot/handlers/pause.py`). Deliberately
+  file-backed rather than in-memory like `_pending_text_action` - an intentional multi-week
+  pause must survive a redeploy, unlike ephemeral per-message state.
 
 ### The list/picker/action callback flow
 
@@ -140,6 +145,13 @@ prefixes matched with `F.data.startswith(...)` in `bot/handlers/tasks.py`:
   silently shifts the boundary by the UTC offset. `tzdata` is a required pip dependency (not
   just stdlib `zoneinfo`) because the `python:3.12-slim` Docker base image ships no system
   IANA database.
+- The bot's default `parse_mode` is HTML (set once in `main.py`, applies to every outgoing
+  message unless overridden per-call) so overdue tasks can render `<b>bold</b>` at higher
+  escalation tiers (`task_view._overdue_marker`/`_format_task_line`). This means **any**
+  user-controlled string interpolated into message text - task titles, project titles,
+  label names, display names - must go through `html.escape()` first, or a title containing
+  a bare `<`/`&` breaks the whole send with a Telegram API error. Check for this whenever
+  adding a new place that echoes Vikunja/user content back into a message.
 
 ### Deployment
 

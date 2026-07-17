@@ -20,6 +20,7 @@ class Config:
     admin_telegram_id: int
     fernet_key: str
     users_file: str
+    pause_state_file: str
     default_project_name: str
     weekly_project_name: str
     digest_time: str
@@ -58,12 +59,19 @@ def load_config() -> Config:
     except ValueError as exc:
         raise RuntimeError("DIGEST_CHAT_ID must be an integer") from exc
 
+    users_file = os.environ.get("USERS_FILE", "users.json")
+    # Lives alongside users.json (same directory, so it inherits the same
+    # persisted volume) rather than needing its own env var - one on/off
+    # flag doesn't warrant configuring its own path separately.
+    pause_state_file = os.path.join(os.path.dirname(users_file) or ".", "digest_pause.json")
+
     return Config(
         bot_token=_required("BOT_TOKEN"),
         vikunja_url=_required("VIKUNJA_URL").rstrip("/"),
         admin_telegram_id=admin_id,
         fernet_key=_required("FERNET_KEY"),
-        users_file=os.environ.get("USERS_FILE", "users.json"),
+        users_file=users_file,
+        pause_state_file=pause_state_file,
         default_project_name=os.environ.get("DEFAULT_PROJECT_NAME", "Inbox"),
         weekly_project_name=os.environ.get("WEEKLY_PROJECT_NAME", "Week to Week"),
         digest_time=os.environ.get("DIGEST_TIME", "07:00"),

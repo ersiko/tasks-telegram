@@ -1,3 +1,5 @@
+import html
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
@@ -15,7 +17,10 @@ NOTHING_TO_PLAN = "Nothing to plan — every open task already has a due date th
 def _format_plan_week_text(tasks: list[dict], config: Config) -> str:
     if not tasks:
         return NOTHING_TO_PLAN
-    lines = [f"{i}. {t['title']}{format_due(t.get('due_date'), config)}" for i, t in enumerate(tasks, start=1)]
+    lines = [
+        f"{i}. {html.escape(t['title'])}{format_due(t.get('due_date'), config)}"
+        for i, t in enumerate(tasks, start=1)
+    ]
     return "Tap a task to put it on this week's plan:\n\n" + "\n".join(lines)
 
 

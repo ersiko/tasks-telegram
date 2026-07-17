@@ -1,3 +1,5 @@
+import html
+
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -19,4 +21,4 @@ async def cmd_projects(message: Message, client: VikunjaClient):
         await message.answer("No projects found.")
         return
 
-    await message.answer("\n".join(f"• {p['title']}" for p in projects))
+    await message.answer("\n".join(f"• {html.escape(p['title'])}" for p in projects))

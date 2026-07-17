@@ -1,4 +1,5 @@
 import datetime as dt
+import html
 from zoneinfo import ZoneInfo
 
 from aiogram import Router
@@ -35,5 +36,5 @@ async def cmd_recap(message: Message, user_store: UserStore, cipher: TokenCipher
         return
 
     lines = [f"📊 Completed since {start.strftime('%a %d %b')}:"]
-    lines += [f"• {t['title']}" for t in completed[:20]]
+    lines += [f"• {html.escape(t['title'])}" for t in completed[:20]]
     await message.answer("\n".join(lines))

@@ -16,6 +16,7 @@ def _config(digest_chat_id=None):
         admin_telegram_id=1,
         fernet_key="x",
         users_file="users.json",
+        pause_state_file="digest_pause.json",
         default_project_name="Inbox",
         weekly_project_name="Week to Week",
         digest_time="07:00",

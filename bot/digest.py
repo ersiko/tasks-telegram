@@ -1,5 +1,6 @@
 import asyncio
 import datetime as dt
+import html
 import logging
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -11,6 +12,7 @@ from bot.config import Config
 from bot.crypto import TokenCipher
 from bot.db import UserStore
 from bot.keyboards import list_menu_keyboard
+from bot.pause_store import PauseStore
 from bot.task_view import (
     format_task_list_text,
     get_completed_between,
@@ -130,7 +132,7 @@ async def _weekly_wrapup_section(
     completed = await merged_completed_between(user_store, cipher, config, last_week_start, last_week_end)
     lines = ["📊 Last week you completed:"]
     if completed:
-        lines += [f"• {t['title']}" for t in completed[:20]]
+        lines += [f"• {html.escape(t['title'])}" for t in completed[:20]]
     else:
         lines.append("Nothing marked done — a quiet week.")
 
@@ -157,7 +159,7 @@ async def _monthly_recap_section(
     completed = await merged_completed_between(user_store, cipher, config, start, end)
     lines = [f"📅 In {start.strftime('%B')} you completed:"]
     if completed:
-        lines += [f"• {t['title']}" for t in completed[:30]]
+        lines += [f"• {html.escape(t['title'])}" for t in completed[:30]]
     else:
         lines.append("Nothing marked done that month.")
     return "\n".join(lines)
@@ -216,7 +218,9 @@ async def _send_individual_digests(bot: Bot, user_store: UserStore, cipher: Toke
             logger.exception("Failed to send morning digest to %s (%s)", display_name, telegram_id)
 
 
-async def run_digest_loop(bot: Bot, user_store: UserStore, cipher: TokenCipher, config: Config) -> None:
+async def run_digest_loop(
+    bot: Bot, user_store: UserStore, cipher: TokenCipher, config: Config, pause_store: PauseStore
+) -> None:
     tz = ZoneInfo(config.timezone)
     hour, minute = (int(part) for part in config.digest_time.split(":"))
 
@@ -227,6 +231,9 @@ async def run_digest_loop(bot: Bot, user_store: UserStore, cipher: TokenCipher, 
         logger.info("Next morning digest at %s (in %.0f min)", target.isoformat(), sleep_seconds / 60)
         await asyncio.sleep(sleep_seconds)
         try:
+            if await pause_store.is_paused(target):
+                logger.info("Digest paused, skipping")
+                continue
             await send_digests(bot, user_store, cipher, config, target)
         except Exception:
             logger.exception("Morning digest run failed")

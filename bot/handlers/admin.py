@@ -1,3 +1,5 @@
+import html
+
 from aiogram import Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
@@ -45,7 +47,7 @@ async def cmd_adduser(
 
     await user_store.add_user(telegram_id, cipher.encrypt(token), display_name)
     await message.answer(
-        f"Registered {display_name} ({telegram_id}).\n"
+        f"Registered {html.escape(display_name)} ({telegram_id}).\n"
         "Please delete your message above now — I can't delete it for you in a private chat, "
         "and it contains their API token in plaintext."
     )
@@ -79,4 +81,4 @@ async def cmd_users(message: Message, user_store: UserStore, config: Config):
         await message.answer("No users registered.")
         return
 
-    await message.answer("\n".join(f"• {name} ({telegram_id})" for telegram_id, name in users))
+    await message.answer("\n".join(f"• {html.escape(name)} ({telegram_id})" for telegram_id, name in users))
