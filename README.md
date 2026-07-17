@@ -263,6 +263,19 @@ The pause state is a small file next to `users.json` (see `USERS_FILE`), so
 it survives restarts/redeploys — an intentional multi-week pause won't get
 silently cleared by the next `docker compose up`.
 
+**Catch-up on resume**: recurring day-to-day chores don't stop being "due"
+just because you're away — without help, coming back from a trip would
+mean `dia a dia`-style tasks sitting there overdue-escalated (🚨🚨 and
+all) for something that plainly couldn't have happened while you were
+gone. So whenever a pause ends (auto-expiring or via `/resume`), every
+open task in `DAILY_PROJECT_NAME` that was due at or before that moment
+gets pushed to be due exactly then instead — effectively "due today,"
+never "overdue." Tasks due *after* the pause ends are left alone, since
+the pause never affected them. This only touches `DAILY_PROJECT_NAME`,
+not the whole household — a weekly goal in `WEEKLY_PROJECT_NAME` that was
+due while you were away is left as genuinely overdue, since re-planning
+it (rather than silently bumping the date) is what `/plan_week` is for.
+
 ## Using this in a group chat
 
 Works for a household where more than one person should be able to manage

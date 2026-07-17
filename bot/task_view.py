@@ -22,6 +22,13 @@ def _parse_due(due_date: Optional[str]) -> Optional[dt.datetime]:
         return None
 
 
+def parse_due_date(due_date: Optional[str]) -> Optional[dt.datetime]:
+    """Public wrapper around the due-date parser, for callers outside this
+    module (e.g. bot/digest.py's pause catch-up) that need the parsed
+    datetime itself, not just a display string."""
+    return _parse_due(due_date)
+
+
 def format_due(due_date: Optional[str], config: Config) -> str:
     parsed = _parse_due(due_date)
     if parsed is None:

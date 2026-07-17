@@ -18,6 +18,7 @@ from bot.task_view import (
     get_completed_between,
     has_tasks_due_between,
     ordered_tasks,
+    parse_due_date,
     week_end,
     week_start,
 )
@@ -120,6 +121,42 @@ async def _new_week_has_plan(
         except VikunjaAPIError:
             logger.exception("Failed to check whether the new week already has a plan")
             return True
+
+
+async def catch_up_daily_tasks(
+    user_store: UserStore, cipher: TokenCipher, config: Config, now: dt.datetime
+) -> int:
+    """When a pause ends (either kind - see bot/handlers/pause.py), push any
+    open DAILY_PROJECT_NAME task due at or before `now` to be due exactly
+    `now` instead. Coming back from being away shouldn't mean an immediate
+    overdue-escalation pile-up for chores that simply couldn't happen while
+    paused - and tasks due after the pause ends are left alone, since the
+    pause never affected them. Uses the admin's account as a representative
+    view of the shared project, same reasoning as _new_week_has_plan:
+    avoids processing (and double-shifting) the same shared tasks once per
+    registered account. Returns how many tasks were shifted."""
+    client = await get_client_for_user(config.admin_telegram_id, user_store, cipher, config)
+    if client is None:
+        return 0
+
+    shifted = 0
+    async with client:
+        try:
+            project = await client.resolve_project(config.daily_project_name)
+            if project is None:
+                logger.warning(
+                    "DAILY_PROJECT_NAME %r not found - nothing to catch up", config.daily_project_name
+                )
+                return 0
+            tasks = await client.list_tasks(project_id=project["id"])
+            for task in tasks:
+                due = parse_due_date(task.get("due_date"))
+                if due is not None and due <= now:
+                    await client.set_due_date(task["id"], now)
+                    shifted += 1
+        except VikunjaAPIError:
+            logger.exception("Failed to catch up daily tasks after pause")
+    return shifted
 
 
 async def _weekly_wrapup_section(
@@ -231,7 +268,10 @@ async def run_digest_loop(
         logger.info("Next morning digest at %s (in %.0f min)", target.isoformat(), sleep_seconds / 60)
         await asyncio.sleep(sleep_seconds)
         try:
-            if await pause_store.is_paused(target):
+            if await pause_store.check_and_clear_if_expired(target):
+                shifted = await catch_up_daily_tasks(user_store, cipher, config, target)
+                logger.info("Timed pause ended, caught up %d daily task(s)", shifted)
+            elif await pause_store.is_paused(target):
                 logger.info("Digest paused, skipping")
                 continue
             await send_digests(bot, user_store, cipher, config, target)

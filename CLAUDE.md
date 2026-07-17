@@ -93,6 +93,16 @@ values encrypted at rest with a Fernet key from `FERNET_KEY`).
   to `users.json`), for the `/pause`/`/resume` commands (`bot/handlers/pause.py`). Deliberately
   file-backed rather than in-memory like `_pending_text_action` - an intentional multi-week
   pause must survive a redeploy, unlike ephemeral per-message state.
+- `digest.catch_up_daily_tasks` (also in `bot/digest.py`) pushes any open `DAILY_PROJECT_NAME`
+  task due at or before "now" to be due exactly "now" - run whenever a pause concludes, so
+  recurring chores that couldn't happen while away don't come back overdue-escalated. Two
+  distinct trigger points call it, both needing to converge on the *actual* pause-end moment
+  rather than the originally-planned one: `run_digest_loop` detects a timed pause's natural
+  expiry via `PauseStore.check_and_clear_if_expired` (fires exactly once, at the loop
+  iteration where `now >= resume_at`); `cmd_resume` calls it directly when ending an
+  indefinite pause, or ending a timed one *early*. Either way the cutoff/target used is
+  whatever "now" actually was when the pause ended - not the originally requested duration -
+  so an early manual `/resume` doesn't leave tasks pushed further out than necessary.
 
 ### The list/picker/action callback flow
 

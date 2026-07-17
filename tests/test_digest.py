@@ -19,6 +19,7 @@ def _config(digest_chat_id=None):
         pause_state_file="digest_pause.json",
         default_project_name="Inbox",
         weekly_project_name="Week to Week",
+        daily_project_name="Day to Day",
         digest_time="07:00",
         timezone="UTC",
         digest_chat_id=digest_chat_id,
@@ -38,6 +39,7 @@ class _FakeClient:
     def __init__(self, tasks, projects):
         self._tasks = tasks
         self._projects = projects
+        self.set_due_date_calls = []
 
     async def __aenter__(self):
         return self
@@ -52,6 +54,18 @@ class _FakeClient:
 
     async def list_projects(self):
         return self._projects
+
+    async def resolve_project(self, name):
+        for p in self._projects:
+            if p["title"].lower() == name.lower():
+                return p
+        return None
+
+    async def set_due_date(self, task_id, due_date):
+        self.set_due_date_calls.append((task_id, due_date))
+        for task in self._tasks:
+            if task["id"] == task_id:
+                task["due_date"] = due_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def test_before_target_time_runs_today():
@@ -153,3 +167,50 @@ def test_previous_month_range_normal_month():
     start, end = digest_module._previous_month_range(now)
     assert start == dt.datetime(2026, 6, 1, 0, 0, tzinfo=dt.timezone.utc)
     assert end == dt.datetime(2026, 6, 30, 23, 59, 59, tzinfo=dt.timezone.utc)
+
+
+def test_catch_up_daily_tasks_shifts_only_tasks_due_by_now(monkeypatch):
+    config = _config()
+    user_store = _FakeUserStore([(1, "Admin")])  # admin_telegram_id=1 in _config()
+    now = dt.datetime(2026, 7, 25, 9, 0, tzinfo=dt.timezone.utc)
+
+    daily_project = [{"id": 2, "title": "Day to Day"}]
+    tasks = [
+        # Overdue before the pause even started - should still catch up
+        {"id": 1, "title": "Old chore", "due_date": "2026-07-20T08:00:00Z"},
+        # Due exactly at "now" - boundary, should catch up
+        {"id": 2, "title": "Due right now", "due_date": "2026-07-25T09:00:00Z"},
+        # Due after "now" (pause never affected it) - must NOT be touched
+        {"id": 3, "title": "Future chore", "due_date": "2026-07-30T08:00:00Z"},
+        # No due date at all - nothing to shift
+        {"id": 4, "title": "Someday", "due_date": "0001-01-01T00:00:00Z"},
+    ]
+    client = _FakeClient(tasks, daily_project)
+
+    async def fake_get_client_for_user(telegram_id, *_args, **_kwargs):
+        return client
+
+    monkeypatch.setattr(digest_module, "get_client_for_user", fake_get_client_for_user)
+
+    shifted = asyncio.run(digest_module.catch_up_daily_tasks(user_store, None, config, now))
+
+    assert shifted == 2
+    shifted_ids = {task_id for task_id, _ in client.set_due_date_calls}
+    assert shifted_ids == {1, 2}
+    assert all(due == now for _, due in client.set_due_date_calls)
+
+
+def test_catch_up_daily_tasks_no_matching_project(monkeypatch):
+    config = _config()
+    user_store = _FakeUserStore([(1, "Admin")])
+    now = dt.datetime(2026, 7, 25, 9, 0, tzinfo=dt.timezone.utc)
+    client = _FakeClient([{"id": 1, "title": "x", "due_date": "2026-07-20T08:00:00Z"}], [])
+
+    async def fake_get_client_for_user(telegram_id, *_args, **_kwargs):
+        return client
+
+    monkeypatch.setattr(digest_module, "get_client_for_user", fake_get_client_for_user)
+
+    shifted = asyncio.run(digest_module.catch_up_daily_tasks(user_store, None, config, now))
+    assert shifted == 0
+    assert client.set_due_date_calls == []

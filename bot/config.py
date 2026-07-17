@@ -23,6 +23,7 @@ class Config:
     pause_state_file: str
     default_project_name: str
     weekly_project_name: str
+    daily_project_name: str
     digest_time: str
     timezone: str
     digest_chat_id: Optional[int]
@@ -74,6 +75,7 @@ def load_config() -> Config:
         pause_state_file=pause_state_file,
         default_project_name=os.environ.get("DEFAULT_PROJECT_NAME", "Inbox"),
         weekly_project_name=os.environ.get("WEEKLY_PROJECT_NAME", "Week to Week"),
+        daily_project_name=os.environ.get("DAILY_PROJECT_NAME", "Day to Day"),
         digest_time=os.environ.get("DIGEST_TIME", "07:00"),
         timezone=os.environ.get("TIMEZONE", "UTC"),
         digest_chat_id=digest_chat_id,

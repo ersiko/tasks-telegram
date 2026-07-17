@@ -46,3 +46,32 @@ def test_persists_across_instances(tmp_path):
     # A fresh instance pointed at the same file should see the same state -
     # this is what makes the pause survive a bot restart/redeploy.
     assert asyncio.run(PauseStore(path).is_paused()) is True
+
+
+def test_check_and_clear_if_expired_on_timed_pause(tmp_path):
+    store = PauseStore(str(tmp_path / "pause.json"))
+    start = dt.datetime(2026, 7, 18, 9, 0, tzinfo=TZ)
+    resume_at = start + dt.timedelta(days=7)
+    asyncio.run(store.pause(resume_at))
+
+    # Not expired yet - still paused, state untouched
+    assert asyncio.run(store.check_and_clear_if_expired(resume_at - dt.timedelta(minutes=1))) is False
+    assert asyncio.run(store.is_paused(resume_at - dt.timedelta(minutes=1))) is True
+
+    # Expired - clears state and reports True exactly once
+    assert asyncio.run(store.check_and_clear_if_expired(resume_at)) is True
+    assert asyncio.run(store.is_paused(resume_at)) is False
+    assert asyncio.run(store.check_and_clear_if_expired(resume_at + dt.timedelta(minutes=1))) is False
+
+
+def test_check_and_clear_if_expired_ignores_indefinite_pause(tmp_path):
+    store = PauseStore(str(tmp_path / "pause.json"))
+    asyncio.run(store.pause())  # no resume_at
+    far_future = dt.datetime(2030, 1, 1, tzinfo=TZ)
+    assert asyncio.run(store.check_and_clear_if_expired(far_future)) is False
+    assert asyncio.run(store.is_paused(far_future)) is True
+
+
+def test_check_and_clear_if_expired_when_never_paused(tmp_path):
+    store = PauseStore(str(tmp_path / "pause.json"))
+    assert asyncio.run(store.check_and_clear_if_expired(dt.datetime.now(TZ))) is False

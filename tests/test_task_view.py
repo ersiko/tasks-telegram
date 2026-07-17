@@ -27,6 +27,7 @@ def _config(timezone: str = "Europe/Madrid", week_start_day: int = 1) -> Config:
         pause_state_file="digest_pause.json",
         default_project_name="Inbox",
         weekly_project_name="Week to Week",
+        daily_project_name="Day to Day",
         digest_time="07:00",
         timezone=timezone,
         digest_chat_id=None,
