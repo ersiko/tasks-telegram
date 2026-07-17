@@ -42,6 +42,10 @@ def task_picker_keyboard(tasks: list[dict], action: str, ctx: str) -> InlineKeyb
 def reschedule_prompt_keyboard(task_id: int, ctx: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(text="😴 +1 day", callback_data=f"resched_snooze:{task_id}:{ctx}:1"),
+                InlineKeyboardButton(text="😴 +1 week", callback_data=f"resched_snooze:{task_id}:{ctx}:7"),
+            ],
             [InlineKeyboardButton(text="🚫 Remove due date", callback_data=f"resched_clear:{task_id}:{ctx}")],
             [InlineKeyboardButton(text="‹ Cancel", callback_data=f"pending_cancel:{ctx}")],
         ]

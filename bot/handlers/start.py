@@ -15,7 +15,7 @@ HELP_TEXT = (
     "  +project   assign to a project (matched by name)\n"
     "  *label     add a label (repeatable)\n"
     "  !priority  low / medium / high / urgent / donow (or 1-5)\n"
-    "  ~repeat    daily / weekly / monthly / every N days / every N weeks\n"
+    "  ~repeat    daily / weekly / monthly / yearly / every N days-weeks-months-years\n"
     "  trailing text is parsed as the due date, e.g. 'friday 5pm'\n\n"
     "Commands:\n"
     "/list [project] - show open tasks\n"

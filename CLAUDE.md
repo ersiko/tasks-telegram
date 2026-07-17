@@ -81,6 +81,13 @@ values encrypted at rest with a Fernet key from `FERNET_KEY`).
   runs `dateparser.search.search_dates` on what's left over for a due date. Extraction order
   in `parse()` matters — each token type is stripped from the working string before the next
   step runs; a new magic-token type has to follow the same strip-then-continue pattern.
+  `~repeat` only gets Vikunja's calendar-exact step for the single-month case
+  (`REPEAT_MODE_MONTHLY`); everything else including `~yearly`/`~every N months`/`~every N
+  years` is a fixed-day-count approximation (30-day months, 365-day years) via
+  `REPEAT_MODE_FROM_COMPLETION`, since Vikunja has no calendar-correct primitive for those.
+  `describe_repeat` reconstructs a human label from just the seconds count, so it can't
+  losslessly distinguish e.g. "every 90 days" from "every 3 months" - it picks the largest
+  evenly-dividing unit as a best-effort guess, not a round-trip of what was typed.
 - `bot/handlers/` — aiogram routers, one per feature area (`tasks`, `planning`, `projects`,
   `admin`, `start`), registered in `bot/main.py`. `tasks.py` is the largest: it owns the
   catch-all quick-add message handler plus `/list`/`/today`/`/week` and the whole
@@ -126,6 +133,10 @@ prefixes matched with `F.data.startswith(...)` in `bot/handlers/tasks.py`:
   just add a callback handler.
 - `back:{ctx}` / `pending_cancel:{ctx}` return to the menu view by refetching and
   re-rendering, rather than restoring prior message state.
+- The Reschedule prompt also has `resched_snooze:{task_id}:{ctx}:{days}` shortcut buttons
+  (+1 day / +1 week) that skip the text-reply step entirely - resolved relative to *now*, not
+  the task's current due date, so snoozing an overdue task always lands it in the future
+  rather than nudging a stale due date and leaving it still overdue.
 - Every handler gets its `VikunjaClient` from `VikunjaClientMiddleware` (see above), not by
   resolving it itself.
 

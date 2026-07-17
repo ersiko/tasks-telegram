@@ -354,6 +354,26 @@ async def cb_reschedule_clear(callback: CallbackQuery, client: VikunjaClient, co
     await callback.answer("Due date removed 🚫")
 
 
+@router.callback_query(F.data.startswith("resched_snooze:"))
+async def cb_reschedule_snooze(callback: CallbackQuery, client: VikunjaClient, config: Config):
+    _, task_id_str, ctx, days_str = callback.data.split(":", 3)
+    _pending_text_action.pop(callback.from_user.id, None)
+    # Relative to now, not the task's current due date - snoozing an
+    # already-overdue task should land it clearly in the future, not just
+    # nudge a stale due date by a day and leave it still overdue. Tasks
+    # reach this button via a list that's already filtered to due/overdue,
+    # so "now + N" is virtually always what's meant in practice.
+    new_due = dt.datetime.now(ZoneInfo(config.timezone)) + dt.timedelta(days=int(days_str))
+    try:
+        await client.set_due_date(int(task_id_str), new_due)
+        await _refresh_list_message(callback, client, ctx, config)
+    except VikunjaAPIError as exc:
+        await callback.answer(f"Error: {exc}", show_alert=True)
+        return
+
+    await callback.answer(f"😴 Snoozed to {new_due.strftime('%a %d %b')}")
+
+
 @router.callback_query(F.data.startswith("pending_cancel:"))
 async def cb_pending_cancel(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, ctx = callback.data.split(":", 1)

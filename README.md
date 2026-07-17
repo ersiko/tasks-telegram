@@ -129,7 +129,7 @@ Send a plain message to add a task. Quick-add syntax (mirrors Vikunja's own
 | `+project` | assign to a project (matched by name) | `+Bills` |
 | `*label` | add a label, repeatable | `*groceries` |
 | `!priority` | `low` / `medium` / `high` / `urgent` / `donow`, or `1`-`5` | `!high` |
-| `~repeat` | `daily` / `weekly` / `monthly`, or `every N days`/`weeks` | `~monthly` |
+| `~repeat` | `daily`/`weekly`/`monthly`/`yearly`, or `every N days`/`weeks`/`months`/`years` | `~monthly` |
 | trailing text | parsed as the due date/time | `tomorrow 5pm`, `friday` |
 
 Everything else becomes the task title. Example:
@@ -138,16 +138,22 @@ Everything else becomes the task title. Example:
 Pay rent +Bills !high tomorrow 5pm
 Clean dishwasher filter +Chores ~monthly
 Check dehumidifier +Chores ~every 3 days
+Test smoke detectors +Chores ~yearly
+Service HVAC +Chores ~every 3 months
 ```
 
 Multi-word labels/projects can be quoted: `*"home repair" +"Household Chores"`.
 
 `~repeat` needs a due date to repeat from — if you don't give one explicitly,
-it defaults to right now. `~daily`/`~weekly`/`~every N days`/`~every N weeks`
-repeat a fixed interval **after completion** (so a task you finish late
-doesn't immediately come due again); `~monthly` uses Vikunja's built-in
-calendar-month step instead, since a fixed day count can't handle
-28-31-day months correctly. There's no `~yearly` or `~every N months` yet.
+it defaults to right now. `~daily`/`~weekly`/`~yearly`/`~every N ...` repeat
+a fixed interval **after completion** (so a task you finish late doesn't
+immediately come due again); `~monthly` (only the single-month cadence, not
+`~every N months`) uses Vikunja's built-in calendar-month step instead,
+since a fixed day count can't handle 28-31-day months correctly. `~every N
+months` and `~yearly`/`~every N years` don't have that same calendar-exact
+option in Vikunja, so they're fixed approximations (30-day months, 365-day
+years) — close enough for a chore reminder, but will drift a little over
+many cycles (e.g. leap years).
 
 ### Commands
 
@@ -182,8 +188,12 @@ per-task picker (titles as buttons) to pick which task, then:
 - **Delete** asks for confirmation first ("Yes, delete" / Cancel) — the one
   irreversible action here, so it doesn't fire on a single mistap.
 - **Reschedule** prompts you to reply with a new date (e.g. "friday 5pm",
-  "next monday" — same natural-language parser as quick-add), or tap
+  "next monday" — same natural-language parser as quick-add), tap
+  **😴 +1 day** / **+1 week** to snooze without typing anything, or tap
   **🚫 Remove due date** to clear it instead. Replying "none" also clears it.
+  Snooze is relative to *now*, not the task's current due date, so it
+  always lands clearly in the future rather than nudging a stale overdue
+  date by a day and leaving it still overdue.
 - **Priority** shows six buttons (Unset/Low/Medium/High/Urgent/Do now) — tap
   one to set it immediately.
 - **Rename** prompts you to reply with the new title.
@@ -325,12 +335,10 @@ set than what the other person originally saw.
   against a live task, since earlier endpoint quirks on this exact Vikunja
   version (see git history) mean it's worth verifying once used for real.
   If it errors instead of clearing, that's the first place to look.
-- Recurring tasks (`~daily`/`~weekly`/`~monthly`/`~every N days`/`~every N
-  weeks`) send `repeat_after`/`repeat_mode` per Vikunja's documented Task
-  model, but haven't been exercised against a live task yet either - same
-  "verify once used for real" caveat as above.
-- No `~yearly` or `~every N months` - only `monthly` gets Vikunja's
-  calendar-correct step; everything else is a fixed day/week count.
+- Recurring tasks (`~daily`/`~weekly`/`~monthly`/`~yearly`/`~every N ...`)
+  send `repeat_after`/`repeat_mode` per Vikunja's documented Task model, but
+  haven't been exercised against a live task yet either - same "verify once
+  used for real" caveat as above.
 - The weekly/monthly recap sections (and `/recap`) assume `done_at` survives
   a recurring task's auto-reset back to not-done - not yet confirmed, see
   "Weekly and monthly recap sections" above.

@@ -117,3 +117,32 @@ def test_no_repeat_by_default():
     assert result.repeat_after is None
     assert result.repeat_mode is None
     assert describe_repeat(result.repeat_after, result.repeat_mode) is None
+
+
+def test_repeat_yearly():
+    result = parse("Test smoke detectors ~yearly")
+    assert result.title == "Test smoke detectors"
+    assert result.repeat_after == 365 * 86400
+    assert result.repeat_mode == 3
+    assert describe_repeat(result.repeat_after, result.repeat_mode) == "yearly"
+
+
+def test_repeat_every_n_months():
+    result = parse("Service HVAC ~every 3 months")
+    assert result.title == "Service HVAC"
+    assert result.repeat_after == 3 * 30 * 86400
+    assert result.repeat_mode == 3
+    assert describe_repeat(result.repeat_after, result.repeat_mode) == "every 3 months"
+
+
+def test_repeat_every_n_years():
+    result = parse("Renew insurance ~every 2 years")
+    assert result.repeat_after == 2 * 365 * 86400
+    assert describe_repeat(result.repeat_after, result.repeat_mode) == "every 2 years"
+
+
+def test_describe_repeat_prefers_largest_unit():
+    # 90 days is expressible as weeks or days too, but months reads better.
+    assert describe_repeat(90 * 86400, 3) == "every 3 months"
+    assert describe_repeat(365 * 86400, 3) == "yearly"
+    assert describe_repeat(730 * 86400, 3) == "every 2 years"

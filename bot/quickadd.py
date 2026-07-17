@@ -9,10 +9,21 @@ LABEL_RE = re.compile(r'\*("([^"]+)"|(\S+))')
 PROJECT_RE = re.compile(r'\+("([^"]+)"|(\S+))')
 PRIORITY_WORDS = {"low": 1, "medium": 2, "high": 3, "urgent": 4, "donow": 5}
 PRIORITY_RE = re.compile(r"!(donow|urgent|high|medium|low|[1-5])\b", re.IGNORECASE)
-REPEAT_RE = re.compile(r"~(daily|weekly|monthly|every\s+\d+\s+(?:days|day|weeks|week))", re.IGNORECASE)
-REPEAT_EVERY_RE = re.compile(r"every\s+(\d+)\s+(days|day|weeks|week)", re.IGNORECASE)
+REPEAT_RE = re.compile(
+    r"~(daily|weekly|monthly|yearly|every\s+\d+\s+(?:days|day|weeks|week|months|month|years|year))",
+    re.IGNORECASE,
+)
+REPEAT_EVERY_RE = re.compile(r"every\s+(\d+)\s+(days|day|weeks|week|months|month|years|year)", re.IGNORECASE)
 
 SECONDS_PER_DAY = 86400
+# Months/years aren't fixed-length, so "every N months"/"~yearly" are fixed
+# approximations (30-day months, 365-day years) rather than calendar-exact -
+# same tradeoff already made for weeks-from-days, just wider. Only true
+# "~monthly" (single-month cadence) gets Vikunja's calendar-correct step,
+# via REPEAT_MODE_MONTHLY below - it has no equivalent for arbitrary N or
+# for years.
+SECONDS_PER_MONTH_APPROX = 30 * SECONDS_PER_DAY
+SECONDS_PER_YEAR_APPROX = 365 * SECONDS_PER_DAY
 
 # repeat_mode values match Vikunja's Task model: 1 = fixed monthly step
 # (calendar-correct, ignores repeat_after); 3 = repeat_after seconds,
@@ -83,17 +94,33 @@ def _parse_repeat_phrase(phrase: str) -> tuple[Optional[int], Optional[int]]:
         return 7 * SECONDS_PER_DAY, REPEAT_MODE_FROM_COMPLETION
     if lowered == "monthly":
         return None, REPEAT_MODE_MONTHLY
+    if lowered == "yearly":
+        return SECONDS_PER_YEAR_APPROX, REPEAT_MODE_FROM_COMPLETION
     every_match = REPEAT_EVERY_RE.match(lowered)
     if every_match:
         count = int(every_match.group(1))
         unit = every_match.group(2)
-        per_unit = SECONDS_PER_DAY if unit.startswith("day") else 7 * SECONDS_PER_DAY
+        if unit.startswith("day"):
+            per_unit = SECONDS_PER_DAY
+        elif unit.startswith("week"):
+            per_unit = 7 * SECONDS_PER_DAY
+        elif unit.startswith("month"):
+            per_unit = SECONDS_PER_MONTH_APPROX
+        else:  # year(s)
+            per_unit = SECONDS_PER_YEAR_APPROX
         return count * per_unit, REPEAT_MODE_FROM_COMPLETION
     return None, None
 
 
 def describe_repeat(repeat_after: Optional[int], repeat_mode: Optional[int]) -> Optional[str]:
-    """Human-readable description of a repeat_after/repeat_mode pair, for confirmation messages."""
+    """Human-readable description of a repeat_after/repeat_mode pair, for confirmation messages.
+
+    Prefers the largest unit that evenly divides the interval (e.g. "every
+    3 months" over "every 90 days") for readability - repeat_after alone
+    can't distinguish "an approximated month-multiple" from "a day count
+    that happens to be a multiple of 30", so this is a best-effort guess
+    at what was probably meant, not a lossless round-trip of the input.
+    """
     if repeat_mode is None:
         return None
     if repeat_mode == REPEAT_MODE_MONTHLY:
@@ -105,6 +132,12 @@ def describe_repeat(repeat_after: Optional[int], repeat_mode: Optional[int]) -> 
         return "daily"
     if days == 7:
         return "weekly"
+    if days == 365:
+        return "yearly"
+    if days % 365 == 0:
+        return f"every {int(days // 365)} years"
+    if days % 30 == 0:
+        return f"every {int(days // 30)} months"
     if days % 7 == 0:
         return f"every {int(days // 7)} weeks"
     return f"every {int(days)} days"
