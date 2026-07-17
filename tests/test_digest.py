@@ -21,6 +21,7 @@ def _config(digest_chat_id=None):
         digest_time="07:00",
         timezone="UTC",
         digest_chat_id=digest_chat_id,
+        week_start_day=1,
     )
 
 
@@ -43,8 +44,10 @@ class _FakeClient:
     async def __aexit__(self, *exc_info):
         return None
 
-    async def list_tasks(self, project_id=None, include_done=False):
-        return self._tasks
+    async def list_tasks(self, project_id=None, done=False):
+        if done is None:
+            return self._tasks
+        return [t for t in self._tasks if t.get("done", False) == done]
 
     async def list_projects(self):
         return self._projects
@@ -110,3 +113,42 @@ def test_merged_today_tasks_empty_when_nothing_due(monkeypatch):
     tasks, titles = asyncio.run(digest_module._merged_today_tasks(user_store, None, config))
     assert tasks == []
     assert titles is None
+
+
+def test_merged_completed_between_dedupes_and_orders_chronologically(monkeypatch):
+    config = _config()
+    user_store = _FakeUserStore([(1, "Alice"), (2, "Bob")])
+    start = dt.datetime(2026, 7, 6, tzinfo=dt.timezone.utc)
+    end = dt.datetime(2026, 7, 12, 23, 59, 59, tzinfo=dt.timezone.utc)
+
+    alice_tasks = [
+        {"id": 200, "title": "Shared task", "done": True, "done_at": "2026-07-08T09:00:00Z"},
+        {"id": 201, "title": "Alice only, earlier", "done": True, "done_at": "2026-07-07T09:00:00Z"},
+    ]
+    bob_tasks = [
+        {"id": 200, "title": "Shared task", "done": True, "done_at": "2026-07-08T09:00:00Z"},
+        {"id": 202, "title": "Bob only, out of range", "done": True, "done_at": "2026-06-01T09:00:00Z"},
+    ]
+    clients = {1: _FakeClient(alice_tasks, []), 2: _FakeClient(bob_tasks, [])}
+
+    async def fake_get_client_for_user(telegram_id, *_args, **_kwargs):
+        return clients[telegram_id]
+
+    monkeypatch.setattr(digest_module, "get_client_for_user", fake_get_client_for_user)
+
+    result = asyncio.run(digest_module.merged_completed_between(user_store, None, config, start, end))
+    assert [t["id"] for t in result] == [201, 200]  # earlier first, 202 excluded (out of range), 200 not duplicated
+
+
+def test_previous_month_range_handles_january():
+    now = dt.datetime(2026, 1, 15, 10, 0, tzinfo=dt.timezone.utc)
+    start, end = digest_module._previous_month_range(now)
+    assert start == dt.datetime(2025, 12, 1, 0, 0, tzinfo=dt.timezone.utc)
+    assert end == dt.datetime(2025, 12, 31, 23, 59, 59, tzinfo=dt.timezone.utc)
+
+
+def test_previous_month_range_normal_month():
+    now = dt.datetime(2026, 7, 15, 10, 0, tzinfo=dt.timezone.utc)
+    start, end = digest_module._previous_month_range(now)
+    assert start == dt.datetime(2026, 6, 1, 0, 0, tzinfo=dt.timezone.utc)
+    assert end == dt.datetime(2026, 6, 30, 23, 59, 59, tzinfo=dt.timezone.utc)

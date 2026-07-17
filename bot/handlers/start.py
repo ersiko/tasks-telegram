@@ -20,6 +20,7 @@ HELP_TEXT = (
     "/today - tasks due today or overdue\n"
     "/week - tasks due this week or overdue\n"
     "/plan_week - pick this week's goals from the backlog\n"
+    "/recap - what's been completed so far this week\n"
     "/projects - list your Vikunja projects\n"
     "/help - show this message\n\n"
     "Each list has Mark Done / Delete / Reschedule / Priority / Rename buttons — "

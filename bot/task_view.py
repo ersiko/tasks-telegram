@@ -36,31 +36,43 @@ def empty_message_for_ctx(ctx: str) -> str:
     }.get(ctx, "No open tasks. 🎉")
 
 
+def _week_start(now_local: dt.datetime, week_start_day: int) -> dt.datetime:
+    """Start (00:00 local) of the week containing now_local, for a week that
+    begins on week_start_day (ISO weekday, 1=Monday..7=Sunday)."""
+    days_since_start = (now_local.isoweekday() - week_start_day) % 7
+    start_date = now_local - dt.timedelta(days=days_since_start)
+    return start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _week_end(now_local: dt.datetime, week_start_day: int) -> dt.datetime:
+    start = _week_start(now_local, week_start_day)
+    return (start + dt.timedelta(days=6)).replace(hour=23, minute=59, second=59, microsecond=0)
+
+
+def week_start(config: Config, now: Optional[dt.datetime] = None) -> dt.datetime:
+    """Start (00:00 local) of the current week, per config.week_start_day."""
+    now_local = now if now is not None else dt.datetime.now(_tz(config))
+    return _week_start(now_local, config.week_start_day)
+
+
+def week_end(config: Config, now: Optional[dt.datetime] = None) -> dt.datetime:
+    """End of the current week in local time, per config.week_start_day -
+    the target due date for /plan_week and the cutoff /week uses."""
+    now_local = now if now is not None else dt.datetime.now(_tz(config))
+    return _week_end(now_local, config.week_start_day)
+
+
 def _cutoff_for_ctx(ctx: str, config: Config, now: Optional[dt.datetime] = None) -> Optional[dt.datetime]:
     """End-of-day/week cutoff in local time, or None for non-date-bounded ctx.
 
-    Weeks run Monday-Sunday. On Sunday, the week cutoff equals today's.
     `now` is injectable for tests; defaults to the real current time.
     """
     now_local = now if now is not None else dt.datetime.now(_tz(config))
     if ctx == "t":
         return now_local.replace(hour=23, minute=59, second=59, microsecond=0)
     if ctx == "w":
-        days_until_sunday = 7 - now_local.isoweekday()
-        end_date = now_local + dt.timedelta(days=days_until_sunday)
-        return end_date.replace(hour=23, minute=59, second=59, microsecond=0)
+        return _week_end(now_local, config.week_start_day)
     return None
-
-
-def week_end(config: Config, now: Optional[dt.datetime] = None) -> dt.datetime:
-    """End of the current Monday-Sunday week in local time - the target due
-    date for /plan_week and the cutoff /week uses."""
-    return _cutoff_for_ctx("w", config, now)
-
-
-def _week_start(now_local: dt.datetime) -> dt.datetime:
-    start_date = now_local - dt.timedelta(days=now_local.isoweekday() - 1)
-    return start_date.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 async def get_planning_candidates(
@@ -71,16 +83,52 @@ async def get_planning_candidates(
     /plan_week to assign this week's due date to. Tasks already scheduled
     for this week or later are left alone."""
     now_local = now if now is not None else dt.datetime.now(_tz(config))
-    week_start = _week_start(now_local)
+    start = _week_start(now_local, config.week_start_day)
 
     tasks = await client.list_tasks(project_id=project_id)
     candidates = []
     for task in tasks:
         parsed = _parse_due(task.get("due_date"))
-        if parsed is None or parsed.astimezone(week_start.tzinfo) < week_start:
+        if parsed is None or parsed.astimezone(start.tzinfo) < start:
             candidates.append(task)
     candidates.sort(key=lambda t: t.get("due_date") or "9999")
     return candidates[:MAX_LISTED_TASKS]
+
+
+async def has_tasks_due_between(
+    client: VikunjaClient, project_id: int, start: dt.datetime, end: dt.datetime
+) -> bool:
+    """Whether project_id has any (open) task due within [start, end]."""
+    tasks = await client.list_tasks(project_id=project_id)
+    for task in tasks:
+        parsed = _parse_due(task.get("due_date"))
+        if parsed is not None and start <= parsed.astimezone(start.tzinfo) <= end:
+            return True
+    return False
+
+
+async def get_completed_between(client: VikunjaClient, start: dt.datetime, end: dt.datetime) -> list[dict]:
+    """Tasks marked done with done_at in [start, end], oldest first.
+
+    Recurring tasks flip done -> undone again as part of advancing to their
+    next occurrence, so this can't filter on current done status via the API
+    (done=True would exclude exactly the recurring completions we want) -
+    fetch everything and rely on done_at (Vikunja: "system-controlled", set
+    whenever a task is marked done) still reflecting the last completion
+    even after that flip. Not yet confirmed against a real recurring task -
+    worth checking once one has actually gone through a done/recur cycle.
+    """
+    tasks = await client.list_tasks(project_id=None, done=None)
+    completed = []
+    for task in tasks:
+        done_at = _parse_due(task.get("done_at"))
+        if done_at is None:
+            continue
+        done_at_local = done_at.astimezone(start.tzinfo)
+        if start <= done_at_local <= end:
+            completed.append((done_at_local, task))
+    completed.sort(key=lambda pair: pair[0])
+    return [task for _, task in completed]
 
 
 async def get_tasks_for_ctx(client: VikunjaClient, ctx: str, config: Config) -> list[dict]:

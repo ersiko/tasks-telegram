@@ -65,10 +65,17 @@ values encrypted at rest with a Fernet key from `FERNET_KEY`).
   date-boundary math ("is this due today/this week") happens here, in the configured
   `TIMEZONE` — never naive UTC (see gotchas below).
 - `bot/digest.py` also supports posting to a shared group instead of DMing each user (see
-  `DIGEST_CHAT_ID`). `_merged_today_tasks` fetches every registered account's "today" view
-  and deduplicates by task ID, since separate Vikunja accounts sharing a project would
-  otherwise each report the same tasks — don't just pick one account's view for the group
-  case, the whole point is showing everyone's tasks together.
+  `DIGEST_CHAT_ID`). `_merged_today_tasks` and `merged_completed_between` fetch every
+  registered account's view and deduplicate by task ID, since separate Vikunja accounts
+  sharing a project would otherwise each report the same tasks — don't just pick one
+  account's view for the group case, the whole point is showing everyone's tasks together.
+  Group digests also get extra sections appended: a weekly recap+planning-nudge on
+  `config.week_start_day`, and a monthly recap on the 1st — both DM-mode-only concepts are
+  skipped there (see "Weekly and monthly recap sections" in README.md). `bot/handlers/
+  recap.py` (`/recap`) reuses `merged_completed_between` for an on-demand version; it's
+  intentionally *not* one of the `VikunjaClientMiddleware` routers, since it needs to iterate
+  every registered account via `user_store`/`cipher` directly rather than act on a single
+  resolved client.
 - `bot/quickadd.py` — pure text parser (`parse(text) -> QuickAddResult`), no I/O, fully
   unit-tested. Extracts `*label`, `+project`, `!priority`, `~repeat` tokens via regex, then
   runs `dateparser.search.search_dates` on what's left over for a due date. Extraction order
@@ -91,7 +98,8 @@ prefixes matched with `F.data.startswith(...)` in `bot/handlers/tasks.py`:
 
 - `menu:{action}:{ctx}` — top-level buttons (Mark Done / Delete / Reschedule / Priority /
   Rename) from `list_menu_keyboard`. `ctx` encodes what the message is a view of: `"a"`
-  (all), `"t"` (today), `"w"` (this week), or `"p{project_id}"` (one project) — see
+  (all), `"t"` (today), `"w"` (this week — boundaries per `config.week_start_day`, not
+  hardcoded Monday-Sunday), or `"p{project_id}"` (one project) — see
   `task_view.get_tasks_for_ctx`.
 - `pick:{action}:{ctx}:{task_id}` — after a menu tap, one button per task
   (`task_picker_keyboard`); tapping one applies `action` to that task.
@@ -122,6 +130,11 @@ prefixes matched with `F.data.startswith(...)` in `bot/handlers/tasks.py`:
   `quickadd.py`; `day|days` matching `day` first and leaving a stray `s`): Python `re`
   alternation is first-match-wins, not longest-match, so alternatives must be ordered
   longest-first.
+- `list_tasks(done=...)` is tri-state (`False`/`True`/`None`), not a plain boolean — this
+  bit once already: `get_completed_between` needs `done=None` (fetch everything, filter by
+  `done_at` client-side), because a recurring task flips back to `done=false` as part of
+  advancing to its next occurrence, so `done=True` would silently exclude exactly the
+  recurring completions the recap feature cares about.
 - `TIMEZONE` (IANA name, e.g. `Europe/Madrid`) drives every "is this due today/this week"
   comparison and displayed due time — never use naive `datetime.utcnow()` for these, it
   silently shifts the boundary by the UTC offset. `tzdata` is a required pip dependency (not

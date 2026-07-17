@@ -11,7 +11,14 @@ from bot.config import Config
 from bot.crypto import TokenCipher
 from bot.db import UserStore
 from bot.keyboards import list_menu_keyboard
-from bot.task_view import format_task_list_text, ordered_tasks
+from bot.task_view import (
+    format_task_list_text,
+    get_completed_between,
+    has_tasks_due_between,
+    ordered_tasks,
+    week_end,
+    week_start,
+)
 from bot.vikunja_client import VikunjaAPIError
 
 logger = logging.getLogger(__name__)
@@ -62,20 +69,128 @@ async def _merged_today_tasks(
     return merged, titles or None
 
 
-async def send_digests(bot: Bot, user_store: UserStore, cipher: TokenCipher, config: Config) -> None:
+async def merged_completed_between(
+    user_store: UserStore, cipher: TokenCipher, config: Config, start: dt.datetime, end: dt.datetime
+) -> list[dict]:
+    """Tasks completed within [start, end] across every registered account,
+    deduplicated by task ID (same rationale as _merged_today_tasks) -
+    used by both the weekly/monthly recap sections and /recap."""
+    seen_ids: set[int] = set()
+    merged: list[tuple[str, dict]] = []
+
+    for telegram_id, display_name in await user_store.list_users():
+        client = await get_client_for_user(telegram_id, user_store, cipher, config)
+        if client is None:
+            continue
+        async with client:
+            try:
+                tasks = await get_completed_between(client, start, end)
+            except VikunjaAPIError:
+                logger.exception("Failed to fetch completed tasks for %s (%s)", display_name, telegram_id)
+                continue
+        for task in tasks:
+            if task["id"] not in seen_ids:
+                seen_ids.add(task["id"])
+                merged.append((task.get("done_at") or "", task))
+
+    merged.sort(key=lambda pair: pair[0])  # ISO8601 strings sort chronologically
+    return [task for _, task in merged]
+
+
+async def _new_week_has_plan(
+    user_store: UserStore, cipher: TokenCipher, config: Config, now_local: dt.datetime
+) -> bool:
+    """Whether WEEKLY_PROJECT_NAME already has something due in the week
+    starting now_local - used to decide whether to nudge toward /plan_week.
+    Checked via the admin's account as a representative view; if it can't
+    be checked, don't nudge on uncertain data."""
+    client = await get_client_for_user(config.admin_telegram_id, user_store, cipher, config)
+    if client is None:
+        return True
+    async with client:
+        try:
+            project = await client.resolve_project(config.weekly_project_name)
+            if project is None:
+                return True
+            start = week_start(config, now_local)
+            end = week_end(config, now_local)
+            return await has_tasks_due_between(client, project["id"], start, end)
+        except VikunjaAPIError:
+            logger.exception("Failed to check whether the new week already has a plan")
+            return True
+
+
+async def _weekly_wrapup_section(
+    user_store: UserStore, cipher: TokenCipher, config: Config, now_local: dt.datetime
+) -> str:
+    this_week_start = week_start(config, now_local)
+    last_week_start = this_week_start - dt.timedelta(days=7)
+    last_week_end = this_week_start - dt.timedelta(seconds=1)
+
+    completed = await merged_completed_between(user_store, cipher, config, last_week_start, last_week_end)
+    lines = ["📊 Last week you completed:"]
+    if completed:
+        lines += [f"• {t['title']}" for t in completed[:20]]
+    else:
+        lines.append("Nothing marked done — a quiet week.")
+
+    if not await _new_week_has_plan(user_store, cipher, config, now_local):
+        lines += ["", "📋 Nothing planned for this week yet — try /plan_week."]
+
+    return "\n".join(lines)
+
+
+def _previous_month_range(now_local: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
+    this_month_start = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if this_month_start.month == 1:
+        last_month_start = this_month_start.replace(year=this_month_start.year - 1, month=12)
+    else:
+        last_month_start = this_month_start.replace(month=this_month_start.month - 1)
+    last_month_end = this_month_start - dt.timedelta(seconds=1)
+    return last_month_start, last_month_end
+
+
+async def _monthly_recap_section(
+    user_store: UserStore, cipher: TokenCipher, config: Config, now_local: dt.datetime
+) -> str:
+    start, end = _previous_month_range(now_local)
+    completed = await merged_completed_between(user_store, cipher, config, start, end)
+    lines = [f"📅 In {start.strftime('%B')} you completed:"]
+    if completed:
+        lines += [f"• {t['title']}" for t in completed[:30]]
+    else:
+        lines.append("Nothing marked done that month.")
+    return "\n".join(lines)
+
+
+async def send_digests(bot: Bot, user_store: UserStore, cipher: TokenCipher, config: Config, now: dt.datetime) -> None:
     if config.digest_chat_id is not None:
-        await _send_group_digest(bot, user_store, cipher, config)
+        await _send_group_digest(bot, user_store, cipher, config, now)
     else:
         await _send_individual_digests(bot, user_store, cipher, config)
 
 
-async def _send_group_digest(bot: Bot, user_store: UserStore, cipher: TokenCipher, config: Config) -> None:
+async def _send_group_digest(
+    bot: Bot, user_store: UserStore, cipher: TokenCipher, config: Config, now: dt.datetime
+) -> None:
     tasks, titles = await _merged_today_tasks(user_store, cipher, config)
-    if not tasks:
+
+    parts = []
+    if tasks:
+        parts.append(DIGEST_HEADER + format_task_list_text(tasks, "t", titles, config))
+    if now.isoweekday() == config.week_start_day:
+        parts.append(await _weekly_wrapup_section(user_store, cipher, config, now))
+    if now.day == 1:
+        parts.append(await _monthly_recap_section(user_store, cipher, config, now))
+
+    if not parts:
         return
-    text = DIGEST_HEADER + format_task_list_text(tasks, "t", titles, config)
+
+    text = "\n\n".join(parts)
     try:
-        await bot.send_message(config.digest_chat_id, text, reply_markup=list_menu_keyboard("t"))
+        await bot.send_message(
+            config.digest_chat_id, text, reply_markup=list_menu_keyboard("t") if tasks else None
+        )
     except Exception:
         logger.exception("Failed to send morning digest to group chat %s", config.digest_chat_id)
 
@@ -112,6 +227,6 @@ async def run_digest_loop(bot: Bot, user_store: UserStore, cipher: TokenCipher, 
         logger.info("Next morning digest at %s (in %.0f min)", target.isoformat(), sleep_seconds / 60)
         await asyncio.sleep(sleep_seconds)
         try:
-            await send_digests(bot, user_store, cipher, config)
+            await send_digests(bot, user_store, cipher, config, target)
         except Exception:
             logger.exception("Morning digest run failed")

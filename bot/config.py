@@ -2,6 +2,16 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+WEEKDAY_NAMES = {
+    "monday": 1,
+    "tuesday": 2,
+    "wednesday": 3,
+    "thursday": 4,
+    "friday": 5,
+    "saturday": 6,
+    "sunday": 7,
+}
+
 
 @dataclass(frozen=True)
 class Config:
@@ -15,6 +25,7 @@ class Config:
     digest_time: str
     timezone: str
     digest_chat_id: Optional[int]
+    week_start_day: int  # ISO weekday, 1=Monday..7=Sunday
 
 
 def _required(name: str) -> str:
@@ -22,6 +33,13 @@ def _required(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name} is required (set it in .env)")
     return value
+
+
+def _parse_weekday(name: str) -> int:
+    key = name.strip().lower()
+    if key not in WEEKDAY_NAMES:
+        raise RuntimeError(f"WEEK_START_DAY must be a weekday name (e.g. Monday), got {name!r}")
+    return WEEKDAY_NAMES[key]
 
 
 def load_config() -> Config:
@@ -51,4 +69,5 @@ def load_config() -> Config:
         digest_time=os.environ.get("DIGEST_TIME", "07:00"),
         timezone=os.environ.get("TIMEZONE", "UTC"),
         digest_chat_id=digest_chat_id,
+        week_start_day=_parse_weekday(os.environ.get("WEEK_START_DAY", "Monday")),
     )

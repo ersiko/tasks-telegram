@@ -63,15 +63,18 @@ class VikunjaClient:
                 return project
         return None
 
-    async def list_tasks(self, project_id: Optional[int] = None, include_done: bool = False) -> list[dict]:
+    async def list_tasks(self, project_id: Optional[int] = None, done: Optional[bool] = False) -> list[dict]:
         # Filtering the global /tasks endpoint by project_id, rather than
         # using /projects/{id}/views/{view}/tasks, sidesteps a Vikunja
         # permission gap: that view-scoped endpoint 401s even with full
         # Tasks + Project Views permissions granted (confirmed live against
         # this instance) - a distinct, seemingly ungrantable permission.
+        #
+        # done: False (default) = open tasks only, True = completed only,
+        # None = no filter on completion status.
         filters = []
-        if not include_done:
-            filters.append("done = false")
+        if done is not None:
+            filters.append(f"done = {'true' if done else 'false'}")
         if project_id is not None:
             filters.append(f"project_id = {project_id}")
         params = {"filter": " && ".join(filters)} if filters else {}

@@ -153,16 +153,21 @@ calendar-month step instead, since a fixed day count can't handle
 
 - `/list [project]` — open tasks, optionally filtered by project
 - `/today` — tasks due today or overdue
-- `/week` (alias `/this_week`) — tasks due by the end of this week (Mon-Sun)
-  or overdue — handy for planning a weekly sprint
+- `/week` (alias `/this_week`) — tasks due by the end of this week
+  (starting `WEEK_START_DAY`) or overdue — handy for planning a weekly sprint
 - `/plan_week` (alias `/choose_weekly_tasks`) — weekly planning ritual: shows
   open tasks in `WEEKLY_PROJECT_NAME` with no due date yet, or a due date
   before this week (carried over unfinished); tapping one sets its due date
   to the end of this week and the message refreshes with the rest, so you
   can tap through several goals in one sitting
+- `/recap` — what's been completed so far this week, merged across every
+  registered account (see "Weekly and monthly recap sections" below)
 - `/projects` — list your Vikunja projects
+- `/chatid` — this chat's ID (no registration needed) — for setting
+  `DIGEST_CHAT_ID`
 - `/help` — quick-add syntax + command list
-- `/adduser`, `/removeuser`, `/users` — admin only
+- `/adduser`, `/removeuser`, `/users` — admin only, `/adduser` private-chat
+  only
 
 `/list` (with no project given), `/today`, and `/week` show tasks from
 multiple projects grouped under a `📁 Project` header; `/list <project>`
@@ -204,6 +209,28 @@ is set (see "Using this in a group chat" below), it instead sends **one**
 combined message to that chat, merging every registered account's tasks
 and deduplicating by task ID — so if two people's Vikunja accounts both
 have access to the same shared project, its tasks aren't listed twice.
+
+### Weekly and monthly recap sections
+
+Group-chat digests (`DIGEST_CHAT_ID` set) get extra sections appended on
+certain days, merged across every registered account the same way as the
+regular digest:
+
+- On `WEEK_START_DAY` (default Monday): a **📊 Last week you completed**
+  section listing everything marked done in the prior 7-day period, plus a
+  **📋 nudge to run `/plan_week`** if `WEEKLY_PROJECT_NAME` doesn't already
+  have anything due in the week that's just starting.
+- On the 1st of each month: a **📅 recap of everything completed last
+  month**.
+
+`/recap` gives the same "completed so far this week" view on demand,
+without waiting for the scheduled message.
+
+These rely on Vikunja's `done_at` field still reflecting a task's last
+completion time even after a recurring task auto-resets back to not-done
+for its next occurrence — plausible given the field's description, but not
+yet confirmed against a real recurring task that's gone through a full
+done/recur cycle.
 
 ## Using this in a group chat
 
@@ -260,6 +287,9 @@ set than what the other person originally saw.
   "verify once used for real" caveat as above.
 - No `~yearly` or `~every N months` - only `monthly` gets Vikunja's
   calendar-correct step; everything else is a fixed day/week count.
+- The weekly/monthly recap sections (and `/recap`) assume `done_at` survives
+  a recurring task's auto-reset back to not-done - not yet confirmed, see
+  "Weekly and monthly recap sections" above.
 - The due-date parser (`dateparser`) can occasionally misread part of a title
   as a date on ambiguous input. Check the confirmation reply after adding a
   task; use the 🗑 button to undo a bad parse and rephrase.
