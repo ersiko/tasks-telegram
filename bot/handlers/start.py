@@ -50,3 +50,10 @@ async def cmd_help(message: Message, user_store: UserStore):
         )
         return
     await message.answer(HELP_TEXT)
+
+
+@router.message(Command("chatid"))
+async def cmd_chatid(message: Message):
+    # No registration/auth needed - just a setup utility, e.g. to find a
+    # group's chat ID for DIGEST_CHAT_ID after adding the bot to it.
+    await message.answer(f"This chat's ID is `{message.chat.id}`", parse_mode="Markdown")

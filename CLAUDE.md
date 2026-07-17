@@ -64,6 +64,11 @@ values encrypted at rest with a Fernet key from `FERNET_KEY`).
   handlers (`/today`, `/week`, `/list`) and the proactive push in `bot/digest.py`. All
   date-boundary math ("is this due today/this week") happens here, in the configured
   `TIMEZONE` — never naive UTC (see gotchas below).
+- `bot/digest.py` also supports posting to a shared group instead of DMing each user (see
+  `DIGEST_CHAT_ID`). `_merged_today_tasks` fetches every registered account's "today" view
+  and deduplicates by task ID, since separate Vikunja accounts sharing a project would
+  otherwise each report the same tasks — don't just pick one account's view for the group
+  case, the whole point is showing everyone's tasks together.
 - `bot/quickadd.py` — pure text parser (`parse(text) -> QuickAddResult`), no I/O, fully
   unit-tested. Extracts `*label`, `+project`, `!priority`, `~repeat` tokens via regex, then
   runs `dateparser.search.search_dates` on what's left over for a due date. Extraction order

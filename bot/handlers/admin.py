@@ -19,6 +19,12 @@ async def cmd_adduser(
 ):
     if not _is_admin(message, config):
         return
+    if message.chat.type != "private":
+        await message.answer(
+            "This posts a Vikunja API token in plaintext — please message me privately instead, "
+            "not in a group."
+        )
+        return
     if not command.args:
         await message.answer("Usage: /adduser <telegram_id> <vikunja_api_token> [display name]")
         return

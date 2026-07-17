@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -13,6 +14,7 @@ class Config:
     weekly_project_name: str
     digest_time: str
     timezone: str
+    digest_chat_id: Optional[int]
 
 
 def _required(name: str) -> str:
@@ -32,6 +34,12 @@ def load_config() -> Config:
     except ValueError as exc:
         raise RuntimeError("ADMIN_TELEGRAM_ID must be an integer") from exc
 
+    digest_chat_id_raw = os.environ.get("DIGEST_CHAT_ID", "").strip()
+    try:
+        digest_chat_id = int(digest_chat_id_raw) if digest_chat_id_raw else None
+    except ValueError as exc:
+        raise RuntimeError("DIGEST_CHAT_ID must be an integer") from exc
+
     return Config(
         bot_token=_required("BOT_TOKEN"),
         vikunja_url=_required("VIKUNJA_URL").rstrip("/"),
@@ -42,4 +50,5 @@ def load_config() -> Config:
         weekly_project_name=os.environ.get("WEEKLY_PROJECT_NAME", "Week to Week"),
         digest_time=os.environ.get("DIGEST_TIME", "07:00"),
         timezone=os.environ.get("TIMEZONE", "UTC"),
+        digest_chat_id=digest_chat_id,
     )

@@ -15,6 +15,7 @@ def _config(timezone: str = "Europe/Madrid") -> Config:
         weekly_project_name="Week to Week",
         digest_time="07:00",
         timezone=timezone,
+        digest_chat_id=None,
     )
 
 

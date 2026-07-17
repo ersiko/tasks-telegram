@@ -192,12 +192,58 @@ from, and no picker step is needed.
 
 ## Morning digest
 
-Every day at `DIGEST_TIME` (in `TIMEZONE`), each registered user gets
-a push message with their tasks due today or overdue, grouped by project —
-the same view as `/today`, sent proactively rather than on request. Anyone
-with nothing due that day gets no message at all, so it doesn't become daily
-noise. It runs as a background loop inside the same bot process (no separate
-scheduler/cron needed) and reads `DIGEST_TIME`/`TIMEZONE` from `.env`.
+Every day at `DIGEST_TIME` (in `TIMEZONE`), registered users get a push
+message with tasks due today or overdue, grouped by project — the same
+view as `/today`, sent proactively rather than on request. Nothing due that
+day means no message at all, so it doesn't become daily noise. Runs as a
+background loop inside the same bot process (no separate scheduler/cron
+needed).
+
+By default this DMs each registered user individually. If `DIGEST_CHAT_ID`
+is set (see "Using this in a group chat" below), it instead sends **one**
+combined message to that chat, merging every registered account's tasks
+and deduplicating by task ID — so if two people's Vikunja accounts both
+have access to the same shared project, its tasks aren't listed twice.
+
+## Using this in a group chat
+
+Works for a household where more than one person should be able to manage
+tasks and see reminders, e.g. a couple sharing chores. Each person still
+registers with their **own** Vikunja account/token via `/adduser` (Vikunja
+project sharing between accounts is how they both see the same tasks) —
+group membership doesn't change how quick-add/commands resolve who you are,
+since every action already keys off the Telegram *sender*, not the chat.
+
+Setup:
+
+1. **Disable Telegram's Privacy Mode for the bot** via @BotFather
+   (`/mybots` → your bot → Bot Settings → Group Privacy → Turn off).
+   Bots have this on by default, which means a bot in a group only sees
+   messages starting with `/` or that @-mention it — with it on, quick-add's
+   plain-text messages would be invisible to the bot and silently do
+   nothing. This has to be done *before* adding the bot to the group, or
+   removed and re-added after changing it.
+2. Add the bot to the group.
+3. Run `/chatid` in the group to get its chat ID, and set `DIGEST_CHAT_ID`
+   to it.
+4. Register each person as usual via `/adduser` — **in a private message to
+   the bot, not in the group** (it posts a Vikunja token in plaintext;
+   `/adduser` refuses to run outside a private chat as a guardrail against
+   accidentally pasting one into the group).
+
+Because quick-add treats every plain-text message as an attempted task,
+this only works well if **the group is used exclusively for the bot** — if
+people also chat casually in it, every message becomes a quick-add attempt
+(or a confusing "couldn't find a task title" reply). There's no built-in
+way to require an explicit trigger (e.g. `/add`) for this yet; if that
+changes; it'd need a chat-type check on the quick-add handler.
+
+Inline buttons (Done/Delete/Reschedule/Priority/Rename) work the same in a
+group as anywhere else — whoever taps one acts using *their own* registered
+account, not the account that originally posted the list. If both accounts
+have full access to the same shared projects this is transparent; if access
+is asymmetric, a picker opened by one person could show a different task
+set than what the other person originally saw.
 
 ## Known limitations (v1)
 
