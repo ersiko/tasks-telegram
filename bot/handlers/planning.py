@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import Config
 from bot.keyboards import plan_week_keyboard
 from bot.task_view import format_due, get_planning_candidates, week_end
-from bot.vikunja_client import VikunjaAPIError, VikunjaClient
+from bot.vikunja_client import VikunjaClient
 
 router = Router(name="planning")
 
@@ -49,10 +49,7 @@ async def cmd_plan_week(message: Message, client: VikunjaClient, config: Config)
         )
         return
 
-    try:
-        await _send_plan_week_list(message, client, project, config)
-    except VikunjaAPIError as exc:
-        await message.answer(f"Vikunja error: {exc}")
+    await _send_plan_week_list(message, client, project, config)
 
 
 @router.callback_query(F.data.startswith("plan:"))
@@ -61,11 +58,7 @@ async def cb_plan_pick(callback: CallbackQuery, client: VikunjaClient, config: C
     project_id = int(project_id_str)
     task_id = int(task_id_str)
 
-    try:
-        await client.set_due_date(task_id, week_end(config))
-        await _refresh_plan_week_message(callback, client, project_id, config)
-    except VikunjaAPIError as exc:
-        await callback.answer(f"Error: {exc}", show_alert=True)
-        return
+    await client.set_due_date(task_id, week_end(config))
+    await _refresh_plan_week_message(callback, client, project_id, config)
 
     await callback.answer("Added to this week's plan ✅")

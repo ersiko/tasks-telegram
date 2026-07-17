@@ -4,14 +4,17 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.filters import ExceptionTypeFilter
 
 from bot.config import load_config
 from bot.crypto import TokenCipher
 from bot.db import UserStore
 from bot.digest import run_digest_loop
+from bot.error_handlers import handle_vikunja_error
 from bot.handlers import admin, pause, planning, projects, recap, start, tasks
 from bot.middlewares import VikunjaClientMiddleware
 from bot.pause_store import PauseStore
+from bot.vikunja_client import VikunjaAPIError
 
 
 async def main() -> None:
@@ -32,6 +35,12 @@ async def main() -> None:
     for router in (tasks.router, projects.router, planning.router):
         router.message.middleware(vikunja_auth)
         router.callback_query.middleware(vikunja_auth)
+
+    # Handlers in tasks/planning/projects deliberately don't catch
+    # VikunjaAPIError themselves - it propagates here, so every failure
+    # gets one consistent, non-technical message and gets logged
+    # server-side exactly once (see bot/error_handlers.py).
+    dp.errors.register(handle_vikunja_error, ExceptionTypeFilter(VikunjaAPIError))
 
     dp.include_router(admin.router)
     dp.include_router(start.router)

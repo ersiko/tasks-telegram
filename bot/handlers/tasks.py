@@ -20,7 +20,7 @@ from bot.keyboards import (
     task_row_keyboard,
 )
 from bot.task_view import format_task_list_text, ordered_tasks
-from bot.vikunja_client import VikunjaAPIError, VikunjaClient
+from bot.vikunja_client import VikunjaClient
 
 router = Router(name="tasks")
 
@@ -79,26 +79,17 @@ async def cmd_list(message: Message, command: CommandObject, client: VikunjaClie
             return
         ctx = f"p{project['id']}"
 
-    try:
-        await _send_task_list(message, client, ctx, config)
-    except VikunjaAPIError as exc:
-        await message.answer(f"Vikunja error: {exc}")
+    await _send_task_list(message, client, ctx, config)
 
 
 @router.message(Command("today"))
 async def cmd_today(message: Message, client: VikunjaClient, config: Config):
-    try:
-        await _send_task_list(message, client, "t", config)
-    except VikunjaAPIError as exc:
-        await message.answer(f"Vikunja error: {exc}")
+    await _send_task_list(message, client, "t", config)
 
 
 @router.message(Command("week", "this_week"))
 async def cmd_week(message: Message, client: VikunjaClient, config: Config):
-    try:
-        await _send_task_list(message, client, "w", config)
-    except VikunjaAPIError as exc:
-        await message.answer(f"Vikunja error: {exc}")
+    await _send_task_list(message, client, "w", config)
 
 
 async def _handle_reschedule_reply(message: Message, client: VikunjaClient, config: Config, pending: dict) -> None:
@@ -114,12 +105,7 @@ async def _handle_reschedule_reply(message: Message, client: VikunjaClient, conf
         )
         return
 
-    try:
-        await client.set_due_date(pending["task_id"], new_due)
-    except VikunjaAPIError as exc:
-        await message.answer(f"Vikunja rejected that: {exc}")
-        return
-
+    await client.set_due_date(pending["task_id"], new_due)
     await _edit_original_list_message(message.bot, pending, client, config)
 
     if new_due is None:
@@ -135,12 +121,7 @@ async def _handle_rename_reply(message: Message, client: VikunjaClient, config: 
         await message.answer("Title can't be empty. Try again, or tap Cancel above.")
         return
 
-    try:
-        await client.set_title(pending["task_id"], new_title)
-    except VikunjaAPIError as exc:
-        await message.answer(f"Vikunja rejected that: {exc}")
-        return
-
+    await client.set_title(pending["task_id"], new_title)
     await _edit_original_list_message(message.bot, pending, client, config)
     await message.answer(f"✏️ Renamed to '{html.escape(new_title)}'")
 
@@ -160,63 +141,56 @@ async def handle_quick_add(message: Message, client: VikunjaClient, config: Conf
         await message.answer("I couldn't find a task title in that message.")
         return
 
-    try:
-        project = None
-        if result.project:
-            project = await client.resolve_project(result.project)
-            if project is None:
-                await message.answer(f"No project matching '{result.project}'; using the default instead.")
+    project = None
+    if result.project:
+        project = await client.resolve_project(result.project)
         if project is None:
-            project = await client.resolve_project(config.default_project_name)
-        if project is None:
-            projects = await client.list_projects()
-            if not projects:
-                await message.answer("You have no projects in Vikunja yet — create one first.")
-                return
-            project = projects[0]
+            await message.answer(f"No project matching '{result.project}'; using the default instead.")
+    if project is None:
+        project = await client.resolve_project(config.default_project_name)
+    if project is None:
+        projects = await client.list_projects()
+        if not projects:
+            await message.answer("You have no projects in Vikunja yet — create one first.")
+            return
+        project = projects[0]
 
-        due_date = result.due_date
-        if result.repeat_mode is not None and due_date is None:
-            # Repeat needs an initial due date to repeat from; default to
-            # now rather than silently dropping the repeat setting.
-            due_date = dt.datetime.now(ZoneInfo(config.timezone))
+    due_date = result.due_date
+    if result.repeat_mode is not None and due_date is None:
+        # Repeat needs an initial due date to repeat from; default to
+        # now rather than silently dropping the repeat setting.
+        due_date = dt.datetime.now(ZoneInfo(config.timezone))
 
-        task = await client.create_task(
-            project["id"],
-            result.title,
-            due_date=due_date,
-            priority=result.priority,
-            repeat_after=result.repeat_after,
-            repeat_mode=result.repeat_mode,
-        )
+    task = await client.create_task(
+        project["id"],
+        result.title,
+        due_date=due_date,
+        priority=result.priority,
+        repeat_after=result.repeat_after,
+        repeat_mode=result.repeat_mode,
+    )
 
-        for label_name in result.labels:
-            label = await client.resolve_label(label_name)
-            await client.add_label_to_task(task["id"], label["id"])
+    for label_name in result.labels:
+        label = await client.resolve_label(label_name)
+        await client.add_label_to_task(task["id"], label["id"])
 
-        summary = [f"✅ Added: {html.escape(result.title)}", f"Project: {html.escape(project['title'])}"]
-        if result.labels:
-            summary.append("Labels: " + ", ".join(html.escape(label) for label in result.labels))
-        if result.priority:
-            summary.append(f"Priority: {result.priority}")
-        if due_date:
-            summary.append(f"Due: {due_date.strftime('%a %d %b %H:%M')}")
-        repeat_desc = quickadd.describe_repeat(result.repeat_after, result.repeat_mode)
-        if repeat_desc:
-            summary.append(f"Repeats: {repeat_desc}")
-        await message.answer("\n".join(summary), reply_markup=task_row_keyboard(task["id"]))
-    except VikunjaAPIError as exc:
-        await message.answer(f"Vikunja rejected that: {exc}")
+    summary = [f"✅ Added: {html.escape(result.title)}", f"Project: {html.escape(project['title'])}"]
+    if result.labels:
+        summary.append("Labels: " + ", ".join(html.escape(label) for label in result.labels))
+    if result.priority:
+        summary.append(f"Priority: {result.priority}")
+    if due_date:
+        summary.append(f"Due: {due_date.strftime('%a %d %b %H:%M')}")
+    repeat_desc = quickadd.describe_repeat(result.repeat_after, result.repeat_mode)
+    if repeat_desc:
+        summary.append(f"Repeats: {repeat_desc}")
+    await message.answer("\n".join(summary), reply_markup=task_row_keyboard(task["id"]))
 
 
 @router.callback_query(F.data.startswith("menu:"))
 async def cb_menu(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, action, ctx = callback.data.split(":", 2)
-    try:
-        tasks, _ = await ordered_tasks(client, ctx, config)
-    except VikunjaAPIError as exc:
-        await callback.answer(f"Error: {exc}", show_alert=True)
-        return
+    tasks, _ = await ordered_tasks(client, ctx, config)
 
     if not tasks:
         await callback.answer("Nothing left to pick.", show_alert=True)
@@ -229,11 +203,7 @@ async def cb_menu(callback: CallbackQuery, client: VikunjaClient, config: Config
 @router.callback_query(F.data.startswith("back:"))
 async def cb_back(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, ctx = callback.data.split(":", 1)
-    try:
-        await _refresh_list_message(callback, client, ctx, config)
-    except VikunjaAPIError as exc:
-        await callback.answer(f"Error: {exc}", show_alert=True)
-        return
+    await _refresh_list_message(callback, client, ctx, config)
     await callback.answer()
 
 
@@ -243,11 +213,7 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
     task_id = int(task_id_str)
 
     if action == "reschedule":
-        try:
-            task = await client.get_task(task_id)
-        except VikunjaAPIError as exc:
-            await callback.answer(f"Error: {exc}", show_alert=True)
-            return
+        task = await client.get_task(task_id)
         _pending_text_action[callback.from_user.id] = {
             "kind": "reschedule",
             "task_id": task_id,
@@ -270,11 +236,7 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
         return
 
     if action == "rename":
-        try:
-            task = await client.get_task(task_id)
-        except VikunjaAPIError as exc:
-            await callback.answer(f"Error: {exc}", show_alert=True)
-            return
+        task = await client.get_task(task_id)
         _pending_text_action[callback.from_user.id] = {
             "kind": "rename",
             "task_id": task_id,
@@ -291,11 +253,7 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
         return
 
     if action == "delete":
-        try:
-            task = await client.get_task(task_id)
-        except VikunjaAPIError as exc:
-            await callback.answer(f"Error: {exc}", show_alert=True)
-            return
+        task = await client.get_task(task_id)
         await callback.message.edit_text(
             f"🗑 Delete '{html.escape(task['title'])}'? This can't be undone.",
             reply_markup=delete_confirm_keyboard(task_id, ctx),
@@ -304,39 +262,24 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
         return
 
     # action == "done"
-    try:
-        await client.set_done(task_id, True)
-        await _refresh_list_message(callback, client, ctx, config)
-    except VikunjaAPIError as exc:
-        await callback.answer(f"Error: {exc}", show_alert=True)
-        return
-
+    await client.set_done(task_id, True)
+    await _refresh_list_message(callback, client, ctx, config)
     await callback.answer("Marked done ✅")
 
 
 @router.callback_query(F.data.startswith("delconfirm:"))
 async def cb_delete_confirm(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, task_id_str, ctx = callback.data.split(":", 2)
-    try:
-        await client.delete_task(int(task_id_str))
-        await _refresh_list_message(callback, client, ctx, config)
-    except VikunjaAPIError as exc:
-        await callback.answer(f"Error: {exc}", show_alert=True)
-        return
-
+    await client.delete_task(int(task_id_str))
+    await _refresh_list_message(callback, client, ctx, config)
     await callback.answer("Deleted 🗑")
 
 
 @router.callback_query(F.data.startswith("setprio:"))
 async def cb_set_priority(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, value_str, task_id_str, ctx = callback.data.split(":", 3)
-    try:
-        await client.set_priority(int(task_id_str), int(value_str))
-        await _refresh_list_message(callback, client, ctx, config)
-    except VikunjaAPIError as exc:
-        await callback.answer(f"Error: {exc}", show_alert=True)
-        return
-
+    await client.set_priority(int(task_id_str), int(value_str))
+    await _refresh_list_message(callback, client, ctx, config)
     await callback.answer("Priority updated")
 
 
@@ -344,13 +287,8 @@ async def cb_set_priority(callback: CallbackQuery, client: VikunjaClient, config
 async def cb_reschedule_clear(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, task_id_str, ctx = callback.data.split(":", 2)
     _pending_text_action.pop(callback.from_user.id, None)
-    try:
-        await client.set_due_date(int(task_id_str), None)
-        await _refresh_list_message(callback, client, ctx, config)
-    except VikunjaAPIError as exc:
-        await callback.answer(f"Error: {exc}", show_alert=True)
-        return
-
+    await client.set_due_date(int(task_id_str), None)
+    await _refresh_list_message(callback, client, ctx, config)
     await callback.answer("Due date removed 🚫")
 
 
@@ -364,13 +302,8 @@ async def cb_reschedule_snooze(callback: CallbackQuery, client: VikunjaClient, c
     # reach this button via a list that's already filtered to due/overdue,
     # so "now + N" is virtually always what's meant in practice.
     new_due = dt.datetime.now(ZoneInfo(config.timezone)) + dt.timedelta(days=int(days_str))
-    try:
-        await client.set_due_date(int(task_id_str), new_due)
-        await _refresh_list_message(callback, client, ctx, config)
-    except VikunjaAPIError as exc:
-        await callback.answer(f"Error: {exc}", show_alert=True)
-        return
-
+    await client.set_due_date(int(task_id_str), new_due)
+    await _refresh_list_message(callback, client, ctx, config)
     await callback.answer(f"😴 Snoozed to {new_due.strftime('%a %d %b')}")
 
 
@@ -378,23 +311,14 @@ async def cb_reschedule_snooze(callback: CallbackQuery, client: VikunjaClient, c
 async def cb_pending_cancel(callback: CallbackQuery, client: VikunjaClient, config: Config):
     _, ctx = callback.data.split(":", 1)
     _pending_text_action.pop(callback.from_user.id, None)
-    try:
-        await _refresh_list_message(callback, client, ctx, config)
-    except VikunjaAPIError as exc:
-        await callback.answer(f"Error: {exc}", show_alert=True)
-        return
-
+    await _refresh_list_message(callback, client, ctx, config)
     await callback.answer("Cancelled")
 
 
 @router.callback_query(F.data.startswith("done:"))
 async def cb_done(callback: CallbackQuery, client: VikunjaClient, config: Config):
     task_id = int(callback.data.split(":", 1)[1])
-    try:
-        await client.set_done(task_id, True)
-    except VikunjaAPIError as exc:
-        await callback.answer(f"Error: {exc}", show_alert=True)
-        return
+    await client.set_done(task_id, True)
     await callback.message.edit_text(f"{callback.message.text}\n✅ marked done")
     await callback.answer("Marked done")
 
@@ -402,10 +326,6 @@ async def cb_done(callback: CallbackQuery, client: VikunjaClient, config: Config
 @router.callback_query(F.data.startswith("del:"))
 async def cb_delete(callback: CallbackQuery, client: VikunjaClient, config: Config):
     task_id = int(callback.data.split(":", 1)[1])
-    try:
-        await client.delete_task(task_id)
-    except VikunjaAPIError as exc:
-        await callback.answer(f"Error: {exc}", show_alert=True)
-        return
+    await client.delete_task(task_id)
     await callback.message.edit_text(f"{callback.message.text}\n🗑 deleted")
     await callback.answer("Deleted")

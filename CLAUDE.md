@@ -60,6 +60,19 @@ values encrypted at rest with a Fernet key from `FERNET_KEY`).
   workflow-data-by-parameter-name mechanism aiogram already uses for `config`. Handlers in
   those three routers should take `client: VikunjaClient` as a parameter rather than
   resolving it themselves.
+- `bot/error_handlers.py` — `handle_vikunja_error`, registered in `main.py` via
+  `dp.errors.register(..., ExceptionTypeFilter(VikunjaAPIError))`. Handlers in `tasks`/
+  `planning`/`projects` deliberately **don't** catch `VikunjaAPIError` themselves - let it
+  propagate. This is intentional, not an oversight: it guarantees one consistent,
+  non-technical message regardless of which handler failed (raw Vikunja HTTP/JSON error
+  text was previously shown directly to users - fine for debugging, actively alarming for a
+  non-technical person), and guarantees every failure gets logged server-side exactly once
+  (previously these weren't logged anywhere, so a real failure was only ever visible via
+  someone reporting "it didn't work"). New handlers in those routers should follow the same
+  pattern - don't add a `try/except VikunjaAPIError` back in. `bot/digest.py`'s background
+  loop is a different context (no live user waiting on a response) and correctly keeps its
+  own local `except VikunjaAPIError: logger.exception(...)` handling - that's not a bug to
+  "fix" by centralizing it too.
 - `bot/task_view.py` — shared "which tasks, formatted how" logic used by both the on-demand
   handlers (`/today`, `/week`, `/list`) and the proactive push in `bot/digest.py`. All
   date-boundary math ("is this due today/this week") happens here, in the configured
