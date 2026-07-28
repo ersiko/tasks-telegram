@@ -180,9 +180,13 @@ prefixes matched with `F.data.startswith(...)` in `bot/handlers/tasks.py`:
 
 - `menu:{action}:{ctx}` — top-level buttons (Mark Done / Delete / Reschedule / Priority /
   Rename) from `list_menu_keyboard`. `ctx` encodes what the message is a view of: `"a"`
-  (all), `"t"` (today), `"w"` (this week — boundaries per `config.week_start_day`, not
-  hardcoded Monday-Sunday), or `"p{project_id}"` (one project) — see
-  `task_view.get_tasks_for_ctx`.
+  (all), `"t"` (today), `"tm"` (tomorrow), `"w"` (this week — boundaries per
+  `config.week_start_day`, not hardcoded Monday-Sunday), or `"p{project_id}"` (one project) —
+  see `task_view.get_tasks_for_ctx`. `"tm"` is the odd one out: `"t"`/`"w"` are cumulative
+  ("due by end of today/week, or overdue" - a single upper-bound cutoff via
+  `_cutoff_for_ctx`), while `"tm"` is a two-sided single-day window (`_tomorrow_bounds`) - a
+  preview of tomorrow specifically shouldn't re-list what's already overdue or due today,
+  those already have their own commands.
 - `pick:{action}:{ctx}:{task_id}` — after a menu tap, one button per task
   (`task_picker_keyboard`); tapping one applies `action` to that task.
 - Actions needing more than one tap (Reschedule, Rename) don't finish inside the callback —

@@ -49,17 +49,17 @@ def _pop_valid_pending(user_id: int) -> Optional[dict]:
 async def _personal_scope(
     client: VikunjaClient, user_store: UserStore, telegram_id: int, chat_type: str, ctx: str
 ) -> tuple[Optional[int], bool]:
-    """(personal_project_id, only_personal) for the "a"/"t"/"w" aggregate
-    views: a DM narrows down to just the caller's own personal project, a
-    group chat excludes it instead, showing the shared/common projects -
-    see task_view.get_tasks_for_ctx. An explicit single-project view (ctx
-    starting with "p") is left untouched, same precedent as quick-add's
-    +project always overriding its DM/group default. Doesn't create the
-    personal project if missing (unlike quick-add's default-project
-    resolution) - a read-only list shouldn't have the side effect of
-    creating a project; personal_project_id just comes back None and
-    filtering becomes a no-op, same as before this feature existed."""
-    if ctx not in ("a", "t", "w"):
+    """(personal_project_id, only_personal) for the "a"/"t"/"w"/"tm"
+    aggregate views: a DM narrows down to just the caller's own personal
+    project, a group chat excludes it instead, showing the shared/common
+    projects - see task_view.get_tasks_for_ctx. An explicit single-project
+    view (ctx starting with "p") is left untouched, same precedent as
+    quick-add's +project always overriding its DM/group default. Doesn't
+    create the personal project if missing (unlike quick-add's
+    default-project resolution) - a read-only list shouldn't have the side
+    effect of creating a project; personal_project_id just comes back None
+    and filtering becomes a no-op, same as before this feature existed."""
+    if ctx not in ("a", "t", "w", "tm"):
         return None, False
     user = await user_store.get_user(telegram_id)
     if user is None:
@@ -127,6 +127,11 @@ async def cmd_list(message: Message, command: CommandObject, client: VikunjaClie
 @router.message(Command("today", "avui"))
 async def cmd_today(message: Message, client: VikunjaClient, user_store: UserStore, config: Config):
     await _send_task_list(message, client, user_store, "t", config)
+
+
+@router.message(Command("tomorrow", "dema"))
+async def cmd_tomorrow(message: Message, client: VikunjaClient, user_store: UserStore, config: Config):
+    await _send_task_list(message, client, user_store, "tm", config)
 
 
 @router.message(Command("week", "this_week", "setmana"))

@@ -212,6 +212,9 @@ Every command also has a Catalan alias, always active regardless of
   (see "DM vs. group" below)
 - `/today` (aka `/avui`) — tasks due today or overdue, same DM/group scoping
   as `/list`
+- `/tomorrow` (aka `/dema`) — tasks due specifically tomorrow (a single-day
+  preview, not cumulative like `/today`/`/week` — doesn't re-list anything
+  already due today or overdue), same DM/group scoping as `/list`
 - `/week` (aliases `/this_week`, `/setmana`) — tasks due by the end of this
   week (starting `WEEK_START_DAY`) or overdue — handy for planning a weekly
   sprint; same DM/group scoping as `/list`

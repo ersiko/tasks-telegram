@@ -72,6 +72,7 @@ def empty_message_for_ctx(ctx: str) -> str:
     return {
         "t": i18n.t("empty_today"),
         "w": i18n.t("empty_week"),
+        "tm": i18n.t("empty_tomorrow"),
     }.get(ctx, i18n.t("empty_default"))
 
 
@@ -112,6 +113,19 @@ def _cutoff_for_ctx(ctx: str, config: Config, now: Optional[dt.datetime] = None)
     if ctx == "w":
         return _week_end(now_local, config.week_start_day)
     return None
+
+
+def _tomorrow_bounds(config: Config, now: Optional[dt.datetime] = None) -> tuple[dt.datetime, dt.datetime]:
+    """Start/end (local, 00:00-23:59:59) of the single calendar day after
+    now - deliberately a two-sided window, unlike _cutoff_for_ctx's "due by
+    X or earlier" cumulative cutoff for today/week. /tomorrow is a preview
+    of what's specifically coming up next, not a re-list of what's already
+    overdue or due today (those already have their own commands)."""
+    now_local = now if now is not None else dt.datetime.now(_tz(config))
+    tomorrow = now_local + dt.timedelta(days=1)
+    start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = tomorrow.replace(hour=23, minute=59, second=59, microsecond=0)
+    return start, end
 
 
 async def get_planning_candidates(
@@ -193,9 +207,25 @@ async def get_tasks_for_ctx(
     only_personal: bool = False,
 ) -> list[dict]:
     # personal_project_id/only_personal only ever narrow the all-projects
-    # views ("a"/"t"/"w") - an explicit single-project view ("p{id}") is
-    # left alone, same precedent as quick-add's +project always overriding
-    # its DM/group default: naming a project explicitly already settles it.
+    # views ("a"/"t"/"w"/"tm") - an explicit single-project view ("p{id}")
+    # is left alone, same precedent as quick-add's +project always
+    # overriding its DM/group default: naming a project explicitly already
+    # settles it.
+    if ctx == "tm":
+        start, end = _tomorrow_bounds(config)
+        tasks = await client.list_tasks()
+        tasks = _filter_by_personal_project(tasks, personal_project_id, only_personal)
+        due_tomorrow = []
+        for task in tasks:
+            parsed = _parse_due(task.get("due_date"))
+            if parsed is None:
+                continue
+            parsed_local = parsed.astimezone(start.tzinfo)
+            if start <= parsed_local <= end:
+                due_tomorrow.append((parsed, task))
+        due_tomorrow.sort(key=lambda pair: pair[0])
+        return [task for _, task in due_tomorrow[:MAX_LISTED_TASKS]]
+
     cutoff = _cutoff_for_ctx(ctx, config)
     if cutoff is not None:
         tasks = await client.list_tasks()

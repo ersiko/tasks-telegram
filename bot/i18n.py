@@ -130,6 +130,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Commands:\n"
             "/list [project] - show open tasks\n"
             "/today - tasks due today or overdue\n"
+            "/tomorrow - tasks due tomorrow\n"
             "/week - tasks due this week or overdue\n"
             "/plan_week - pick this week's goals from the backlog\n"
             "/recap - what's been completed so far this week\n"
@@ -154,6 +155,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Ordres:\n"
             "/llista [projecte] - mostra les tasques obertes\n"
             "/avui - tasques que vencen avui o endarrerides\n"
+            "/dema - tasques que vencen demà\n"
             "/setmana - tasques que vencen aquesta setmana o endarrerides\n"
             "/planifica_setmana - tria els objectius d'aquesta setmana des del pendent\n"
             "/resum - què s'ha completat aquesta setmana\n"
@@ -394,6 +396,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     # bot/task_view.py
     "empty_today": {"en": "Nothing due today. 🎉", "ca": "No venç res avui. 🎉"},
     "empty_week": {"en": "Nothing due this week. 🎉", "ca": "No venç res aquesta setmana. 🎉"},
+    "empty_tomorrow": {"en": "Nothing due tomorrow. 🎉", "ca": "No venç res demà. 🎉"},
     "empty_default": {"en": "No open tasks. 🎉", "ca": "No hi ha cap tasca oberta. 🎉"},
     "unknown_project": {"en": "Unknown", "ca": "Desconegut"},
     "due_suffix": {"en": " (due {date})", "ca": " (venç {date})"},
