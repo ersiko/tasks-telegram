@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -9,10 +10,26 @@ class VikunjaAPIError(Exception):
 
 
 class VikunjaClient:
-    def __init__(self, base_url: str, token: str):
+    def __init__(self, base_url: str, token: str, tz: str = "UTC"):
         self._base_url = base_url.rstrip("/")
         self._token = token
+        self._tz = ZoneInfo(tz)
         self._client: Optional[httpx.AsyncClient] = None
+
+    def _to_utc_iso(self, value: datetime) -> str:
+        # strftime("...Z") only formats a datetime's existing wall-clock
+        # fields and appends a literal "Z" - it does NOT convert to UTC.
+        # Passing it an aware-but-non-UTC datetime (e.g. now() in
+        # config.timezone) silently mislabels local time as UTC, shifting
+        # every due date by the UTC offset (this bit us: a task given "+1
+        # day" at 23:24 CEST landed at 01:24 the day after, since Vikunja
+        # read "23:24Z" as 23:24 UTC = 01:24 CEST). A naive datetime (e.g.
+        # from quickadd's dateparser, which returns naive local wall-clock
+        # values - see bot/quickadd.py) is assumed to represent this
+        # client's configured timezone and is localized before conversion.
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=self._tz)
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def _build_httpx_client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -94,7 +111,7 @@ class VikunjaClient:
     ) -> dict:
         payload = {"title": title}
         if due_date is not None:
-            payload["due_date"] = due_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+            payload["due_date"] = self._to_utc_iso(due_date)
         if priority is not None:
             payload["priority"] = priority
         if repeat_mode is not None:
@@ -110,7 +127,7 @@ class VikunjaClient:
         return await self._request("POST", f"/tasks/{task_id}", json={"done": done})
 
     async def set_due_date(self, task_id: int, due_date: Optional[datetime]) -> dict:
-        payload = {"due_date": due_date.strftime("%Y-%m-%dT%H:%M:%SZ") if due_date else None}
+        payload = {"due_date": self._to_utc_iso(due_date) if due_date else None}
         return await self._request("POST", f"/tasks/{task_id}", json=payload)
 
     async def set_priority(self, task_id: int, priority: int) -> dict:

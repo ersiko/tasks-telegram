@@ -18,4 +18,4 @@ async def get_client_for_user(
     if user is None:
         return None
     token = cipher.decrypt(user.encrypted_token)
-    return VikunjaClient(config.vikunja_url, token)
+    return VikunjaClient(config.vikunja_url, token, config.timezone)

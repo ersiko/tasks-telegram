@@ -226,6 +226,20 @@ prefixes matched with `F.data.startswith(...)` in `bot/handlers/tasks.py`:
   silently shifts the boundary by the UTC offset. `tzdata` is a required pip dependency (not
   just stdlib `zoneinfo`) because the `python:3.12-slim` Docker base image ships no system
   IANA database.
+- `VikunjaClient._to_utc_iso` (used by `create_task`/`set_due_date`) is the one place that
+  actually converts to UTC before sending a due date to Vikunja's API - `strftime("...Z")`
+  alone only formats a datetime's existing wall-clock fields and appends a literal `"Z"`, it
+  does **not** convert anything, so calling it directly on an aware-but-non-UTC datetime (e.g.
+  `dt.datetime.now(ZoneInfo(config.timezone))`, used throughout for "now") silently mislabels
+  local time as UTC - this bit us for real: a task snoozed "+1 day" at 23:24 CEST landed at
+  01:24 the day after, since Vikunja read the mislabeled "23:24Z" as UTC and the bot displayed
+  it back converted to CEST (+2h, rolling past midnight). `VikunjaClient` is constructed with
+  `config.timezone` (`bot/access.py:get_client_for_user`) specifically so `_to_utc_iso` can
+  localize a **naive** datetime (e.g. quickadd's dateparser output, which is naive local
+  wall-clock time - see `bot/quickadd.py`) before converting, and correctly `.astimezone()` an
+  **aware** one - both cases funnel through the same method, so a new call site passing a due
+  date to Vikunja doesn't need to think about this at all, just don't reintroduce a bare
+  `due_date.strftime(...)` bypassing it.
 - The bot's default `parse_mode` is HTML (set once in `main.py`, applies to every outgoing
   message unless overridden per-call) so overdue tasks can render `<b>bold</b>` at higher
   escalation tiers (`task_view._overdue_marker`/`_format_task_line`). This means **any**
