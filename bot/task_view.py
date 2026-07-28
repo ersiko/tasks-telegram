@@ -3,6 +3,7 @@ import html
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from bot import i18n
 from bot.config import Config
 from bot.vikunja_client import VikunjaClient
 
@@ -34,7 +35,7 @@ def format_due(due_date: Optional[str], config: Config) -> str:
     if parsed is None:
         return ""
     local = parsed.astimezone(_tz(config))
-    return f" (due {local.strftime('%a %d %b %H:%M')})"
+    return i18n.t("due_suffix", date=i18n.fmt_datetime(local))
 
 
 def _days_overdue(due_date: Optional[str], config: Config, now: Optional[dt.datetime] = None) -> int:
@@ -69,9 +70,9 @@ def _format_task_line(index: int, task: dict, config: Config, now: Optional[dt.d
 
 def empty_message_for_ctx(ctx: str) -> str:
     return {
-        "t": "Nothing due today. 🎉",
-        "w": "Nothing due this week. 🎉",
-    }.get(ctx, "No open tasks. 🎉")
+        "t": i18n.t("empty_today"),
+        "w": i18n.t("empty_week"),
+    }.get(ctx, i18n.t("empty_default"))
 
 
 def _week_start(now_local: dt.datetime, week_start_day: int) -> dt.datetime:
@@ -226,7 +227,7 @@ def format_task_list_text(
     lines: list[str] = []
     current_project = None
     for i, task in enumerate(tasks, start=1):
-        title = project_titles_map.get(task.get("project_id"), "Unknown")
+        title = project_titles_map.get(task.get("project_id"), i18n.t("unknown_project"))
         if title != current_project:
             if lines:
                 lines.append("")

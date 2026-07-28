@@ -1,14 +1,14 @@
 from typing import Optional
 
+from bot import i18n
 from bot.config import Config
 from bot.crypto import TokenCipher
 from bot.db import UserStore
 from bot.vikunja_client import VikunjaClient
 
-UNREGISTERED_MESSAGE = (
-    "You're not registered yet. Your Telegram ID is `{user_id}`.\n"
-    "Ask the admin to register you with /adduser."
-)
+
+def unregistered_message(user_id: int) -> str:
+    return i18n.t("not_registered", user_id=user_id)
 
 
 async def get_client_for_user(

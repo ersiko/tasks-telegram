@@ -6,6 +6,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import ExceptionTypeFilter
 
+from bot import i18n
 from bot.config import load_config
 from bot.crypto import TokenCipher
 from bot.db import UserStore
@@ -20,6 +21,7 @@ from bot.vikunja_client import VikunjaAPIError
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     config = load_config()
+    i18n.init(config.language)
     cipher = TokenCipher(config.fernet_key)
     user_store = UserStore(config.users_file)
     await user_store.init()

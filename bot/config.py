@@ -28,6 +28,7 @@ class Config:
     timezone: str
     digest_chat_id: Optional[int]
     week_start_day: int  # ISO weekday, 1=Monday..7=Sunday
+    language: str = "en"  # "en" or "ca" - see bot/i18n.py
 
 
 def _required(name: str) -> str:
@@ -42,6 +43,15 @@ def _parse_weekday(name: str) -> int:
     if key not in WEEKDAY_NAMES:
         raise RuntimeError(f"WEEK_START_DAY must be a weekday name (e.g. Monday), got {name!r}")
     return WEEKDAY_NAMES[key]
+
+
+def _parse_language(value: str) -> str:
+    from bot.i18n import SUPPORTED_LANGUAGES
+
+    key = value.strip().lower()
+    if key not in SUPPORTED_LANGUAGES:
+        raise RuntimeError(f"LANGUAGE must be one of {SUPPORTED_LANGUAGES}, got {value!r}")
+    return key
 
 
 def load_config() -> Config:
@@ -80,4 +90,5 @@ def load_config() -> Config:
         timezone=os.environ.get("TIMEZONE", "UTC"),
         digest_chat_id=digest_chat_id,
         week_start_day=_parse_weekday(os.environ.get("WEEK_START_DAY", "Monday")),
+        language=_parse_language(os.environ.get("LANGUAGE", "en")),
     )

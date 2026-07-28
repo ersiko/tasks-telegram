@@ -3,7 +3,8 @@ from typing import Any, Awaitable, Callable
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, TelegramObject
 
-from bot.access import UNREGISTERED_MESSAGE, get_client_for_user
+from bot import i18n
+from bot.access import get_client_for_user, unregistered_message
 
 
 class VikunjaClientMiddleware(BaseMiddleware):
@@ -29,9 +30,9 @@ class VikunjaClientMiddleware(BaseMiddleware):
         client = await get_client_for_user(event.from_user.id, user_store, cipher, config)
         if client is None:
             if isinstance(event, CallbackQuery):
-                await event.answer("You're not registered.", show_alert=True)
+                await event.answer(i18n.t("not_registered_alert"), show_alert=True)
             else:
-                await event.answer(UNREGISTERED_MESSAGE.format(user_id=event.from_user.id), parse_mode="Markdown")
+                await event.answer(unregistered_message(event.from_user.id), parse_mode="Markdown")
             return None
 
         async with client:

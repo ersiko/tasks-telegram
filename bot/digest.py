@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 
+from bot import i18n
 from bot.access import get_client_for_user
 from bot.config import Config
 from bot.crypto import TokenCipher
@@ -25,8 +26,6 @@ from bot.task_view import (
 from bot.vikunja_client import VikunjaAPIError
 
 logger = logging.getLogger(__name__)
-
-DIGEST_HEADER = "☀️ Good morning! Due today or overdue:\n\n"
 
 
 def next_run_at(now: dt.datetime, hour: int, minute: int) -> dt.datetime:
@@ -167,14 +166,14 @@ async def _weekly_wrapup_section(
     last_week_end = this_week_start - dt.timedelta(seconds=1)
 
     completed = await merged_completed_between(user_store, cipher, config, last_week_start, last_week_end)
-    lines = ["📊 Last week you completed:"]
+    lines = [i18n.t("weekly_wrapup_header")]
     if completed:
         lines += [f"• {html.escape(t['title'])}" for t in completed[:20]]
     else:
-        lines.append("Nothing marked done — a quiet week.")
+        lines.append(i18n.t("weekly_wrapup_empty"))
 
     if not await _new_week_has_plan(user_store, cipher, config, now_local):
-        lines += ["", "📋 Nothing planned for this week yet — try /plan_week."]
+        lines += ["", i18n.t("weekly_wrapup_nudge")]
 
     return "\n".join(lines)
 
@@ -194,11 +193,11 @@ async def _monthly_recap_section(
 ) -> str:
     start, end = _previous_month_range(now_local)
     completed = await merged_completed_between(user_store, cipher, config, start, end)
-    lines = [f"📅 In {start.strftime('%B')} you completed:"]
+    lines = [i18n.t("monthly_recap_header", month=i18n.fmt_month(start))]
     if completed:
         lines += [f"• {html.escape(t['title'])}" for t in completed[:30]]
     else:
-        lines.append("Nothing marked done that month.")
+        lines.append(i18n.t("monthly_recap_empty"))
     return "\n".join(lines)
 
 
@@ -216,7 +215,7 @@ async def _send_group_digest(
 
     parts = []
     if tasks:
-        parts.append(DIGEST_HEADER + format_task_list_text(tasks, "t", titles, config))
+        parts.append(i18n.t("digest_header") + format_task_list_text(tasks, "t", titles, config))
     if now.isoweekday() == config.week_start_day:
         parts.append(await _weekly_wrapup_section(user_store, cipher, config, now))
     if now.day == 1:
@@ -248,7 +247,7 @@ async def _send_individual_digests(bot: Bot, user_store: UserStore, cipher: Toke
         if not tasks:
             continue
 
-        text = DIGEST_HEADER + format_task_list_text(tasks, "t", titles, config)
+        text = i18n.t("digest_header") + format_task_list_text(tasks, "t", titles, config)
         try:
             await bot.send_message(telegram_id, text, reply_markup=list_menu_keyboard("t"))
         except Exception:

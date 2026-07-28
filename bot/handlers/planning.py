@@ -4,6 +4,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
+from bot import i18n
 from bot.config import Config
 from bot.keyboards import plan_week_keyboard
 from bot.task_view import format_due, get_planning_candidates, week_end
@@ -11,17 +12,15 @@ from bot.vikunja_client import VikunjaClient
 
 router = Router(name="planning")
 
-NOTHING_TO_PLAN = "Nothing to plan — every open task already has a due date this week or later. 🎉"
-
 
 def _format_plan_week_text(tasks: list[dict], config: Config) -> str:
     if not tasks:
-        return NOTHING_TO_PLAN
+        return i18n.t("nothing_to_plan")
     lines = [
         f"{i}. {html.escape(t['title'])}{format_due(t.get('due_date'), config)}"
         for i, t in enumerate(tasks, start=1)
     ]
-    return "Tap a task to put it on this week's plan:\n\n" + "\n".join(lines)
+    return i18n.t("plan_week_prompt") + "\n".join(lines)
 
 
 async def _send_plan_week_list(message: Message, client: VikunjaClient, project: dict, config: Config) -> None:
@@ -40,13 +39,11 @@ async def _refresh_plan_week_message(
     await callback.message.edit_text(text, reply_markup=kb)
 
 
-@router.message(Command("plan_week", "choose_weekly_tasks"))
+@router.message(Command("plan_week", "choose_weekly_tasks", "planifica_setmana"))
 async def cmd_plan_week(message: Message, client: VikunjaClient, config: Config):
     project = await client.resolve_project(config.weekly_project_name)
     if project is None:
-        await message.answer(
-            f"No project matching '{config.weekly_project_name}' — check the WEEKLY_PROJECT_NAME setting."
-        )
+        await message.answer(i18n.t("plan_week_no_project", name=config.weekly_project_name))
         return
 
     await _send_plan_week_list(message, client, project, config)
@@ -61,4 +58,4 @@ async def cb_plan_pick(callback: CallbackQuery, client: VikunjaClient, config: C
     await client.set_due_date(task_id, week_end(config))
     await _refresh_plan_week_message(callback, client, project_id, config)
 
-    await callback.answer("Added to this week's plan ✅")
+    await callback.answer(i18n.t("plan_week_added"))

@@ -5,6 +5,7 @@ from aiogram import Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
+from bot import i18n
 from bot.config import Config
 from bot.crypto import TokenCipher
 from bot.db import UserStore
@@ -17,14 +18,14 @@ router = Router(name="pause")
 async def _require_registered(message: Message, user_store: UserStore) -> bool:
     if await user_store.get_user(message.from_user.id) is None:
         await message.answer(
-            f"You're not registered yet. Your Telegram ID is `{message.from_user.id}`.",
+            i18n.t("not_registered_short", user_id=message.from_user.id),
             parse_mode="Markdown",
         )
         return False
     return True
 
 
-@router.message(Command("pause"))
+@router.message(Command("pause", "pausa"))
 async def cmd_pause(
     message: Message, command: CommandObject, user_store: UserStore, pause_store: PauseStore, config: Config
 ):
@@ -36,31 +37,23 @@ async def cmd_pause(
         try:
             days = int(command.args.strip())
         except ValueError:
-            await message.answer(
-                "Usage: /pause [days] - e.g. /pause 7 to auto-resume in a week, "
-                "or /pause with no number to pause until you run /resume."
-            )
+            await message.answer(i18n.t("pause_usage"))
             return
         if days <= 0:
-            await message.answer("Days must be a positive number.")
+            await message.answer(i18n.t("days_must_be_positive"))
             return
         now = dt.datetime.now(ZoneInfo(config.timezone))
         resume_at = now + dt.timedelta(days=days)
 
     await pause_store.pause(resume_at)
-    catch_up_note = (
-        f" Any {config.daily_project_name} task due while paused will be pushed to when you're back."
-    )
+    catch_up_note = i18n.t("pause_catch_up_note", project=config.daily_project_name)
     if resume_at is not None:
-        await message.answer(
-            f"⏸ Digest paused until {resume_at.strftime('%a %d %b')}. Run /resume to lift it early."
-            + catch_up_note
-        )
+        await message.answer(i18n.t("paused_until", date=i18n.fmt_date(resume_at)) + catch_up_note)
     else:
-        await message.answer("⏸ Digest paused indefinitely. Run /resume when you're back." + catch_up_note)
+        await message.answer(i18n.t("paused_indefinite") + catch_up_note)
 
 
-@router.message(Command("resume"))
+@router.message(Command("resume", "repren"))
 async def cmd_resume(
     message: Message, user_store: UserStore, cipher: TokenCipher, pause_store: PauseStore, config: Config
 ):
@@ -71,15 +64,12 @@ async def cmd_resume(
     await pause_store.resume()
 
     if not was_paused:
-        await message.answer("▶️ Digest resumed.")
+        await message.answer(i18n.t("resumed"))
         return
 
     now = dt.datetime.now(ZoneInfo(config.timezone))
     shifted = await catch_up_daily_tasks(user_store, cipher, config, now)
     if shifted:
-        await message.answer(
-            f"▶️ Digest resumed. Pushed {shifted} {config.daily_project_name} task(s) that were "
-            "due while paused to today."
-        )
+        await message.answer(i18n.t("resumed_with_catchup", count=shifted, project=config.daily_project_name))
     else:
-        await message.answer("▶️ Digest resumed.")
+        await message.answer(i18n.t("resumed"))
