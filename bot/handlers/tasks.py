@@ -20,7 +20,7 @@ from bot.keyboards import (
     task_picker_keyboard,
     task_row_keyboard,
 )
-from bot.task_view import format_task_list_text, ordered_tasks
+from bot.task_view import format_task_list_text, ordered_tasks, resolve_personal_project_id
 from bot.vikunja_client import VikunjaClient
 
 router = Router(name="tasks")
@@ -46,32 +46,73 @@ def _pop_valid_pending(user_id: int) -> Optional[dict]:
     return entry
 
 
-async def _send_task_list(message: Message, client: VikunjaClient, ctx: str, config: Config):
-    tasks, titles = await ordered_tasks(client, ctx, config)
+async def _personal_scope(
+    client: VikunjaClient, user_store: UserStore, telegram_id: int, chat_type: str, ctx: str
+) -> tuple[Optional[int], bool]:
+    """(personal_project_id, only_personal) for the "a"/"t"/"w" aggregate
+    views: a DM narrows down to just the caller's own personal project, a
+    group chat excludes it instead, showing the shared/common projects -
+    see task_view.get_tasks_for_ctx. An explicit single-project view (ctx
+    starting with "p") is left untouched, same precedent as quick-add's
+    +project always overriding its DM/group default. Doesn't create the
+    personal project if missing (unlike quick-add's default-project
+    resolution) - a read-only list shouldn't have the side effect of
+    creating a project; personal_project_id just comes back None and
+    filtering becomes a no-op, same as before this feature existed."""
+    if ctx not in ("a", "t", "w"):
+        return None, False
+    user = await user_store.get_user(telegram_id)
+    if user is None:
+        return None, False
+    personal_project_id = await resolve_personal_project_id(client, user.display_name)
+    return personal_project_id, chat_type == "private"
+
+
+async def _send_task_list(message: Message, client: VikunjaClient, user_store: UserStore, ctx: str, config: Config):
+    personal_project_id, only_personal = await _personal_scope(
+        client, user_store, message.from_user.id, message.chat.type, ctx
+    )
+    tasks, titles = await ordered_tasks(client, ctx, config, personal_project_id, only_personal)
     text = format_task_list_text(tasks, ctx, titles, config)
     kb = list_menu_keyboard(ctx) if tasks else None
     await message.answer(text, reply_markup=kb)
 
 
-async def _refresh_list_message(callback: CallbackQuery, client: VikunjaClient, ctx: str, config: Config) -> None:
-    tasks, titles = await ordered_tasks(client, ctx, config)
+async def _refresh_list_message(
+    callback: CallbackQuery, client: VikunjaClient, user_store: UserStore, ctx: str, config: Config
+) -> None:
+    personal_project_id, only_personal = await _personal_scope(
+        client, user_store, callback.from_user.id, callback.message.chat.type, ctx
+    )
+    tasks, titles = await ordered_tasks(client, ctx, config, personal_project_id, only_personal)
     text = format_task_list_text(tasks, ctx, titles, config)
     kb = list_menu_keyboard(ctx) if tasks else None
     await callback.message.edit_text(text, reply_markup=kb)
 
 
-async def _edit_original_list_message(bot, pending: dict, client: VikunjaClient, config: Config) -> None:
-    tasks, titles = await ordered_tasks(client, pending["ctx"], config)
+async def _edit_original_list_message(
+    message: Message, pending: dict, client: VikunjaClient, user_store: UserStore, config: Config
+) -> None:
+    # message is the incoming text reply (reschedule/rename), sent in the
+    # same chat as the list message being refreshed - its chat.type is
+    # therefore also the original list's, so no need to have stashed it in
+    # `pending` separately.
+    personal_project_id, only_personal = await _personal_scope(
+        client, user_store, message.from_user.id, message.chat.type, pending["ctx"]
+    )
+    tasks, titles = await ordered_tasks(client, pending["ctx"], config, personal_project_id, only_personal)
     text = format_task_list_text(tasks, pending["ctx"], titles, config)
     kb = list_menu_keyboard(pending["ctx"]) if tasks else None
     try:
-        await bot.edit_message_text(chat_id=pending["chat_id"], message_id=pending["message_id"], text=text, reply_markup=kb)
+        await message.bot.edit_message_text(
+            chat_id=pending["chat_id"], message_id=pending["message_id"], text=text, reply_markup=kb
+        )
     except Exception:
         pass  # original list message may be gone/too old to edit - not critical
 
 
 @router.message(Command("list", "llista"))
-async def cmd_list(message: Message, command: CommandObject, client: VikunjaClient, config: Config):
+async def cmd_list(message: Message, command: CommandObject, client: VikunjaClient, user_store: UserStore, config: Config):
     ctx = "a"
     if command.args:
         project = await client.resolve_project(command.args.strip())
@@ -80,20 +121,22 @@ async def cmd_list(message: Message, command: CommandObject, client: VikunjaClie
             return
         ctx = f"p{project['id']}"
 
-    await _send_task_list(message, client, ctx, config)
+    await _send_task_list(message, client, user_store, ctx, config)
 
 
 @router.message(Command("today", "avui"))
-async def cmd_today(message: Message, client: VikunjaClient, config: Config):
-    await _send_task_list(message, client, "t", config)
+async def cmd_today(message: Message, client: VikunjaClient, user_store: UserStore, config: Config):
+    await _send_task_list(message, client, user_store, "t", config)
 
 
 @router.message(Command("week", "this_week", "setmana"))
-async def cmd_week(message: Message, client: VikunjaClient, config: Config):
-    await _send_task_list(message, client, "w", config)
+async def cmd_week(message: Message, client: VikunjaClient, user_store: UserStore, config: Config):
+    await _send_task_list(message, client, user_store, "w", config)
 
 
-async def _handle_reschedule_reply(message: Message, client: VikunjaClient, config: Config, pending: dict) -> None:
+async def _handle_reschedule_reply(
+    message: Message, client: VikunjaClient, user_store: UserStore, config: Config, pending: dict
+) -> None:
     text = message.text.strip()
     is_clear = text.lower() in RESCHEDULE_CLEAR_WORDS
     new_due = None if is_clear else quickadd.parse_date_only(text)
@@ -104,7 +147,7 @@ async def _handle_reschedule_reply(message: Message, client: VikunjaClient, conf
         return
 
     await client.set_due_date(pending["task_id"], new_due)
-    await _edit_original_list_message(message.bot, pending, client, config)
+    await _edit_original_list_message(message, pending, client, user_store, config)
 
     if new_due is None:
         await message.answer(i18n.t("due_date_removed"))
@@ -112,7 +155,9 @@ async def _handle_reschedule_reply(message: Message, client: VikunjaClient, conf
         await message.answer(i18n.t("rescheduled_to", date=i18n.fmt_datetime(new_due)))
 
 
-async def _handle_rename_reply(message: Message, client: VikunjaClient, config: Config, pending: dict) -> None:
+async def _handle_rename_reply(
+    message: Message, client: VikunjaClient, user_store: UserStore, config: Config, pending: dict
+) -> None:
     new_title = message.text.strip()
     if not new_title:
         _pending_text_action[message.from_user.id] = pending  # let them retry
@@ -120,7 +165,7 @@ async def _handle_rename_reply(message: Message, client: VikunjaClient, config: 
         return
 
     await client.set_title(pending["task_id"], new_title)
-    await _edit_original_list_message(message.bot, pending, client, config)
+    await _edit_original_list_message(message, pending, client, user_store, config)
     await message.answer(i18n.t("renamed_to", title=html.escape(new_title)))
 
 
@@ -155,9 +200,9 @@ async def handle_quick_add(message: Message, client: VikunjaClient, user_store: 
     pending = _pop_valid_pending(message.from_user.id)
     if pending is not None:
         if pending["kind"] == "reschedule":
-            await _handle_reschedule_reply(message, client, config, pending)
+            await _handle_reschedule_reply(message, client, user_store, config, pending)
         elif pending["kind"] == "rename":
-            await _handle_rename_reply(message, client, config, pending)
+            await _handle_rename_reply(message, client, user_store, config, pending)
         return
 
     result = quickadd.parse(message.text)
@@ -217,9 +262,12 @@ async def handle_quick_add(message: Message, client: VikunjaClient, user_store: 
 
 
 @router.callback_query(F.data.startswith("menu:"))
-async def cb_menu(callback: CallbackQuery, client: VikunjaClient, config: Config):
+async def cb_menu(callback: CallbackQuery, client: VikunjaClient, user_store: UserStore, config: Config):
     _, action, ctx = callback.data.split(":", 2)
-    tasks, _ = await ordered_tasks(client, ctx, config)
+    personal_project_id, only_personal = await _personal_scope(
+        client, user_store, callback.from_user.id, callback.message.chat.type, ctx
+    )
+    tasks, _ = await ordered_tasks(client, ctx, config, personal_project_id, only_personal)
 
     if not tasks:
         await callback.answer(i18n.t("nothing_left_to_pick"), show_alert=True)
@@ -230,14 +278,14 @@ async def cb_menu(callback: CallbackQuery, client: VikunjaClient, config: Config
 
 
 @router.callback_query(F.data.startswith("back:"))
-async def cb_back(callback: CallbackQuery, client: VikunjaClient, config: Config):
+async def cb_back(callback: CallbackQuery, client: VikunjaClient, user_store: UserStore, config: Config):
     _, ctx = callback.data.split(":", 1)
-    await _refresh_list_message(callback, client, ctx, config)
+    await _refresh_list_message(callback, client, user_store, ctx, config)
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("pick:"))
-async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config):
+async def cb_pick(callback: CallbackQuery, client: VikunjaClient, user_store: UserStore, config: Config):
     _, action, ctx, task_id_str = callback.data.split(":", 3)
     task_id = int(task_id_str)
 
@@ -291,37 +339,37 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
 
     # action == "done"
     await client.set_done(task_id, True)
-    await _refresh_list_message(callback, client, ctx, config)
+    await _refresh_list_message(callback, client, user_store, ctx, config)
     await callback.answer(i18n.t("marked_done_full"))
 
 
 @router.callback_query(F.data.startswith("delconfirm:"))
-async def cb_delete_confirm(callback: CallbackQuery, client: VikunjaClient, config: Config):
+async def cb_delete_confirm(callback: CallbackQuery, client: VikunjaClient, user_store: UserStore, config: Config):
     _, task_id_str, ctx = callback.data.split(":", 2)
     await client.delete_task(int(task_id_str))
-    await _refresh_list_message(callback, client, ctx, config)
+    await _refresh_list_message(callback, client, user_store, ctx, config)
     await callback.answer(i18n.t("deleted_full"))
 
 
 @router.callback_query(F.data.startswith("setprio:"))
-async def cb_set_priority(callback: CallbackQuery, client: VikunjaClient, config: Config):
+async def cb_set_priority(callback: CallbackQuery, client: VikunjaClient, user_store: UserStore, config: Config):
     _, value_str, task_id_str, ctx = callback.data.split(":", 3)
     await client.set_priority(int(task_id_str), int(value_str))
-    await _refresh_list_message(callback, client, ctx, config)
+    await _refresh_list_message(callback, client, user_store, ctx, config)
     await callback.answer(i18n.t("priority_updated"))
 
 
 @router.callback_query(F.data.startswith("resched_clear:"))
-async def cb_reschedule_clear(callback: CallbackQuery, client: VikunjaClient, config: Config):
+async def cb_reschedule_clear(callback: CallbackQuery, client: VikunjaClient, user_store: UserStore, config: Config):
     _, task_id_str, ctx = callback.data.split(":", 2)
     _pending_text_action.pop(callback.from_user.id, None)
     await client.set_due_date(int(task_id_str), None)
-    await _refresh_list_message(callback, client, ctx, config)
+    await _refresh_list_message(callback, client, user_store, ctx, config)
     await callback.answer(i18n.t("due_date_removed_short"))
 
 
 @router.callback_query(F.data.startswith("resched_snooze:"))
-async def cb_reschedule_snooze(callback: CallbackQuery, client: VikunjaClient, config: Config):
+async def cb_reschedule_snooze(callback: CallbackQuery, client: VikunjaClient, user_store: UserStore, config: Config):
     _, task_id_str, ctx, days_str = callback.data.split(":", 3)
     _pending_text_action.pop(callback.from_user.id, None)
     # Relative to now, not the task's current due date - snoozing an
@@ -331,15 +379,15 @@ async def cb_reschedule_snooze(callback: CallbackQuery, client: VikunjaClient, c
     # so "now + N" is virtually always what's meant in practice.
     new_due = dt.datetime.now(ZoneInfo(config.timezone)) + dt.timedelta(days=int(days_str))
     await client.set_due_date(int(task_id_str), new_due)
-    await _refresh_list_message(callback, client, ctx, config)
+    await _refresh_list_message(callback, client, user_store, ctx, config)
     await callback.answer(i18n.t("snoozed_to", date=i18n.fmt_date(new_due)))
 
 
 @router.callback_query(F.data.startswith("pending_cancel:"))
-async def cb_pending_cancel(callback: CallbackQuery, client: VikunjaClient, config: Config):
+async def cb_pending_cancel(callback: CallbackQuery, client: VikunjaClient, user_store: UserStore, config: Config):
     _, ctx = callback.data.split(":", 1)
     _pending_text_action.pop(callback.from_user.id, None)
-    await _refresh_list_message(callback, client, ctx, config)
+    await _refresh_list_message(callback, client, user_store, ctx, config)
     await callback.answer(i18n.t("cancelled"))
 
 

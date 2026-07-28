@@ -170,10 +170,36 @@ async def get_completed_between(client: VikunjaClient, start: dt.datetime, end: 
     return [task for _, task in completed]
 
 
-async def get_tasks_for_ctx(client: VikunjaClient, ctx: str, config: Config) -> list[dict]:
+def _filter_by_personal_project(
+    tasks: list[dict], personal_project_id: Optional[int], only_personal: bool
+) -> list[dict]:
+    """Narrows an all-projects task list to just the caller's personal
+    project (DM view) or everything except it (group/"common" view) - see
+    resolve_personal_scope. A no-op if personal_project_id is None, i.e.
+    the caller has no personal project yet (nothing to filter by, so this
+    behaves exactly as it did before this feature existed)."""
+    if personal_project_id is None:
+        return tasks
+    if only_personal:
+        return [t for t in tasks if t.get("project_id") == personal_project_id]
+    return [t for t in tasks if t.get("project_id") != personal_project_id]
+
+
+async def get_tasks_for_ctx(
+    client: VikunjaClient,
+    ctx: str,
+    config: Config,
+    personal_project_id: Optional[int] = None,
+    only_personal: bool = False,
+) -> list[dict]:
+    # personal_project_id/only_personal only ever narrow the all-projects
+    # views ("a"/"t"/"w") - an explicit single-project view ("p{id}") is
+    # left alone, same precedent as quick-add's +project always overriding
+    # its DM/group default: naming a project explicitly already settles it.
     cutoff = _cutoff_for_ctx(ctx, config)
     if cutoff is not None:
         tasks = await client.list_tasks()
+        tasks = _filter_by_personal_project(tasks, personal_project_id, only_personal)
         due_soon = []
         for task in tasks:
             parsed = _parse_due(task.get("due_date"))
@@ -186,8 +212,20 @@ async def get_tasks_for_ctx(client: VikunjaClient, ctx: str, config: Config) -> 
 
     project_id = int(ctx[1:]) if ctx.startswith("p") else None
     tasks = await client.list_tasks(project_id=project_id)
+    if project_id is None:
+        tasks = _filter_by_personal_project(tasks, personal_project_id, only_personal)
     tasks = sorted(tasks, key=lambda t: t.get("due_date") or "9999")
     return tasks[:MAX_LISTED_TASKS]
+
+
+async def resolve_personal_project_id(client: VikunjaClient, display_name: str) -> Optional[int]:
+    """Vikunja project ID of the project named after display_name, if any -
+    the caller's "personal" project for the DM-vs-group split in /list,
+    /today, /week, and the individual morning digest. Takes display_name
+    rather than a UserStore/telegram_id so this module doesn't need to know
+    about UserStore - callers already have both."""
+    project = await client.resolve_project(display_name)
+    return project["id"] if project else None
 
 
 async def project_titles(client: VikunjaClient) -> dict[int, str]:
@@ -195,7 +233,13 @@ async def project_titles(client: VikunjaClient) -> dict[int, str]:
     return {p["id"]: p["title"] for p in projects}
 
 
-async def ordered_tasks(client: VikunjaClient, ctx: str, config: Config) -> tuple[list[dict], Optional[dict[int, str]]]:
+async def ordered_tasks(
+    client: VikunjaClient,
+    ctx: str,
+    config: Config,
+    personal_project_id: Optional[int] = None,
+    only_personal: bool = False,
+) -> tuple[list[dict], Optional[dict[int, str]]]:
     """Fetch tasks for ctx; for multi-project views, group them by project.
 
     Returns (tasks, project_titles) - project_titles is None for a
@@ -203,7 +247,7 @@ async def ordered_tasks(client: VikunjaClient, ctx: str, config: Config) -> tupl
     be redundant. The same ordering drives both the displayed text and any
     picker keyboard, so buttons line up with what's on screen.
     """
-    tasks = await get_tasks_for_ctx(client, ctx, config)
+    tasks = await get_tasks_for_ctx(client, ctx, config, personal_project_id, only_personal)
     if not tasks or ctx.startswith("p"):
         return tasks, None
     titles = await project_titles(client)

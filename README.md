@@ -90,8 +90,7 @@ these resources, only "read one" / "read all" — grant at least:
 - Tasks: **read all** (`/list` and `/today` hit the list-all endpoint and get
   a 401 without this), create, update, delete
 - Projects: read all, **create** (needed to auto-create a DM's personal
-  project on first use - see "Which project a task lands in without
-  `+project`" below)
+  project on first use - see "DM vs. group" below)
 - Labels: read all, create
 
 ("Project Views" is not needed — the bot deliberately avoids the
@@ -146,26 +145,51 @@ Service HVAC +Chores ~every 3 months
 
 Multi-word labels/projects can be quoted: `*"home repair" +"Household Chores"`.
 
-### Which project a task lands in without `+project`
+### DM vs. group: personal project and "which tasks am I seeing"
 
-If you don't name a project explicitly, where the message came from decides
-the default:
+Whether a message is a DM or sent in a group chat changes two related
+things: which project a new quick-add task defaults into, and which tasks
+`/list`, `/today`, and `/week` (and your individual morning digest) show
+you.
 
-- **DM** (private chat with the bot) → a project named after *your own*
-  registered display name (e.g. "Tomas" or "Laura") — your personal
-  project. Created automatically in Vikunja the first time you quick-add
-  from a DM without one, if it doesn't already exist (needs the token's
-  Projects **create** permission — see step 6 above).
+**Your personal project.** Everyone gets one automatically: a Vikunja
+project named after their own registered display name (e.g. "Tomas" or
+"Laura"). It's created for you the first time you quick-add from a DM
+without naming a project (needs the token's Projects **create** permission
+— see step 6 above) — no manual setup needed.
+
+**Quick-add's default project** (when you don't type `+project`):
+
+- **DM** → your personal project (auto-created as above if it doesn't
+  exist yet).
 - **Group chat** (e.g. the shared household group) → `DAILY_PROJECT_NAME`
-  ("Dia a dia" by default) — the shared day-to-day chores project. Not
+  ("Dia a dia" by default) — the shared day-to-day chores project. *Not*
   auto-created — this one's expected to already exist as part of normal
-  setup, unlike a personal project which has no other setup step.
+  setup, unlike a personal project which has no other setup step. If it
+  doesn't exist, this silently falls back to `DEFAULT_PROJECT_NAME` (no
+  warning — it's a default, not a mistake), and then the first project in
+  your account.
 
-If `DAILY_PROJECT_NAME` doesn't exist in Vikunja for the group case, it
-silently falls back to `DEFAULT_PROJECT_NAME` (no warning — this is a
-default, not a mistake), and if even that's missing, the first project in
-your account. `WEEKLY_PROJECT_NAME` ("Setmana a setmana") is never a
-quick-add default — it's only ever populated deliberately via `/plan_week`.
+**`/list`, `/today`, `/week`, and your morning digest** (with no explicit
+project named — `/list <project>` is unaffected, naming one always wins):
+
+- **DM** → only tasks in your personal project. This also applies to your
+  individual morning digest push, since that's inherently a DM too — it
+  narrows to your personal project the same way.
+- **Group chat** → everything *except* your personal project (so the
+  shared/common projects, e.g. `DAILY_PROJECT_NAME`/`WEEKLY_PROJECT_NAME`
+  and anything else you have access to). The merged group digest (when
+  `DIGEST_CHAT_ID` is set) is unaffected by this — it already combines
+  every registered account's tasks, which is the "common" view by
+  construction.
+
+If your personal project doesn't exist yet, none of this filtering has
+anything to narrow by, so it's a no-op — `/list` etc. behave exactly as
+they did before this feature existed (everything, unfiltered) until you've
+quick-added at least once from a DM.
+
+`WEEKLY_PROJECT_NAME` ("Setmana a setmana") is never a quick-add default —
+it's only ever populated deliberately via `/plan_week`.
 
 `~repeat` needs a due date to repeat from — if you don't give one explicitly,
 it defaults to right now. `~daily`/`~weekly`/`~yearly`/`~every N ...` repeat
@@ -184,11 +208,13 @@ Every command also has a Catalan alias, always active regardless of
 `LANGUAGE` (see "Language" below) — shown after "aka" below:
 
 - `/list [project]` (aka `/llista`) — open tasks, optionally filtered by
-  project
-- `/today` (aka `/avui`) — tasks due today or overdue
+  project; with no project named, scoped to personal-vs-common by DM/group
+  (see "DM vs. group" below)
+- `/today` (aka `/avui`) — tasks due today or overdue, same DM/group scoping
+  as `/list`
 - `/week` (aliases `/this_week`, `/setmana`) — tasks due by the end of this
   week (starting `WEEK_START_DAY`) or overdue — handy for planning a weekly
-  sprint
+  sprint; same DM/group scoping as `/list`
 - `/plan_week` (aliases `/choose_weekly_tasks`, `/planifica_setmana`) —
   weekly planning ritual: shows open tasks in `WEEKLY_PROJECT_NAME` with no
   due date yet, or a due date before this week (carried over unfinished);
@@ -373,11 +399,11 @@ Setup:
    `/adduser` refuses to run outside a private chat as a guardrail against
    accidentally pasting one into the group).
 5. Make sure `DAILY_PROJECT_NAME` ("Dia a dia" by default) exists in
-   Vikunja — quick-add in the group defaults there (see "Which project a
-   task lands in without `+project`" above). Each person's own personal
-   project (quick-add's DM default) needs no separate setup — it's created
-   automatically, named after their registered display name, the first
-   time they quick-add from a DM.
+   Vikunja — quick-add in the group defaults there, and `/list`/`/today`/
+   `/week` in the group show everything except each person's own personal
+   project (see "DM vs. group" above). Each person's own personal project
+   needs no separate setup — it's created automatically, named after their
+   registered display name, the first time they quick-add from a DM.
 
 Because quick-add treats every plain-text message as an attempted task,
 this only works well if **the group is used exclusively for the bot** — if

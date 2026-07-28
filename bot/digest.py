@@ -20,6 +20,7 @@ from bot.task_view import (
     has_tasks_due_between,
     ordered_tasks,
     parse_due_date,
+    resolve_personal_project_id,
     week_end,
     week_start,
 )
@@ -234,13 +235,19 @@ async def _send_group_digest(
 
 
 async def _send_individual_digests(bot: Bot, user_store: UserStore, cipher: TokenCipher, config: Config) -> None:
+    # Individual digests are inherently a DM push, so - like /today in a DM
+    # - each person's digest narrows to just their own personal project,
+    # not the whole account. The merged group digest (_send_group_digest)
+    # is unaffected by this - it already shows every registered account's
+    # tasks together, which is the "common" view by construction.
     for telegram_id, display_name in await user_store.list_users():
         client = await get_client_for_user(telegram_id, user_store, cipher, config)
         if client is None:
             continue
         async with client:
             try:
-                tasks, titles = await ordered_tasks(client, "t", config)
+                personal_project_id = await resolve_personal_project_id(client, display_name)
+                tasks, titles = await ordered_tasks(client, "t", config, personal_project_id, only_personal=True)
             except VikunjaAPIError:
                 logger.exception("Failed to fetch morning digest tasks for %s (%s)", display_name, telegram_id)
                 continue

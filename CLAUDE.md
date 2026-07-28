@@ -135,6 +135,23 @@ values encrypted at rest with a Fernet key from `FERNET_KEY`).
   first project if `DAILY_PROJECT_NAME` doesn't exist. `WEEKLY_PROJECT_NAME` is deliberately
   never a quick-add default - it's only ever populated via `/plan_week`, so an off-hand
   quick-add message doesn't end up silently claiming a spot on this week's curated plan.
+- The same DM-vs-group split extends to *reading* task lists, not just where quick-add writes
+  them: `bot/task_view.get_tasks_for_ctx`/`ordered_tasks` take optional `personal_project_id`/
+  `only_personal` params that narrow the "a"/"t"/"w" aggregate views (never the explicit
+  `"p{id}"` single-project view - same "naming it explicitly wins" precedent as everywhere
+  else) to just the personal project (DM) or everything except it (group). `tasks.py`'s
+  `_personal_scope` resolves `personal_project_id` fresh on every call from whichever
+  `callback.from_user`/`message.from_user` is acting right now (not cached in `ctx` or
+  `_pending_text_action`), so re-renders driven by a different person tapping a button in a
+  shared list correctly reflect *their* personal project, not the original poster's. Unlike
+  quick-add's default-project resolution, this never calls `create_project` - a read-only list
+  shouldn't have the side effect of creating one; a personal project that doesn't exist yet
+  just means `personal_project_id` comes back `None` and the filtering silently no-ops
+  (identical to pre-feature behavior: `/list`/`/today`/`/week` show everything, unfiltered).
+  `bot/digest.py`'s `_send_individual_digests` (the per-DM morning push) applies the same
+  personal-only narrowing, since it's inherently a DM; `_send_group_digest`/
+  `_merged_today_tasks` are untouched, since merging every registered account's tasks together
+  is already the "common" view by construction.
 - `bot/digest.py` — background `asyncio` task, started via `asyncio.create_task` in
   `main.py` alongside (not instead of) `dp.start_polling`, that wakes once a day and pushes
   each registered user their `/today`-equivalent view via `bot.send_message`. Checks
