@@ -63,6 +63,9 @@ class VikunjaClient:
                 return project
         return None
 
+    async def create_project(self, title: str) -> dict:
+        return await self._request("PUT", "/projects", json={"title": title})
+
     async def list_tasks(self, project_id: Optional[int] = None, done: Optional[bool] = False) -> list[dict]:
         # Filtering the global /tasks endpoint by project_id, rather than
         # using /projects/{id}/views/{view}/tasks, sidesteps a Vikunja

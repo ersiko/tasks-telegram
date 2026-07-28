@@ -89,7 +89,9 @@ these resources, only "read one" / "read all" — grant at least:
 
 - Tasks: **read all** (`/list` and `/today` hit the list-all endpoint and get
   a 401 without this), create, update, delete
-- Projects: read all
+- Projects: read all, **create** (needed to auto-create a DM's personal
+  project on first use - see "Which project a task lands in without
+  `+project`" below)
 - Labels: read all, create
 
 ("Project Views" is not needed — the bot deliberately avoids the
@@ -144,6 +146,27 @@ Service HVAC +Chores ~every 3 months
 
 Multi-word labels/projects can be quoted: `*"home repair" +"Household Chores"`.
 
+### Which project a task lands in without `+project`
+
+If you don't name a project explicitly, where the message came from decides
+the default:
+
+- **DM** (private chat with the bot) → a project named after *your own*
+  registered display name (e.g. "Tomas" or "Laura") — your personal
+  project. Created automatically in Vikunja the first time you quick-add
+  from a DM without one, if it doesn't already exist (needs the token's
+  Projects **create** permission — see step 6 above).
+- **Group chat** (e.g. the shared household group) → `DAILY_PROJECT_NAME`
+  ("Dia a dia" by default) — the shared day-to-day chores project. Not
+  auto-created — this one's expected to already exist as part of normal
+  setup, unlike a personal project which has no other setup step.
+
+If `DAILY_PROJECT_NAME` doesn't exist in Vikunja for the group case, it
+silently falls back to `DEFAULT_PROJECT_NAME` (no warning — this is a
+default, not a mistake), and if even that's missing, the first project in
+your account. `WEEKLY_PROJECT_NAME` ("Setmana a setmana") is never a
+quick-add default — it's only ever populated deliberately via `/plan_week`.
+
 `~repeat` needs a due date to repeat from — if you don't give one explicitly,
 it defaults to right now. `~daily`/`~weekly`/`~yearly`/`~every N ...` repeat
 a fixed interval **after completion** (so a task you finish late doesn't
@@ -157,25 +180,37 @@ many cycles (e.g. leap years).
 
 ### Commands
 
-- `/list [project]` — open tasks, optionally filtered by project
-- `/today` — tasks due today or overdue
-- `/week` (alias `/this_week`) — tasks due by the end of this week
-  (starting `WEEK_START_DAY`) or overdue — handy for planning a weekly sprint
-- `/plan_week` (alias `/choose_weekly_tasks`) — weekly planning ritual: shows
-  open tasks in `WEEKLY_PROJECT_NAME` with no due date yet, or a due date
-  before this week (carried over unfinished); tapping one sets its due date
-  to the end of this week and the message refreshes with the rest, so you
-  can tap through several goals in one sitting
-- `/recap` — what's been completed so far this week, merged across every
-  registered account (see "Weekly and monthly recap sections" below)
-- `/projects` — list your Vikunja projects
-- `/chatid` — this chat's ID (no registration needed) — for setting
-  `DIGEST_CHAT_ID`
-- `/pause [days]` / `/resume` — suspend the digest (indefinitely, or for a
-  number of days), e.g. while away — see "Pausing the digest" below
-- `/help` — quick-add syntax + command list
-- `/adduser`, `/removeuser`, `/users` — admin only, `/adduser` private-chat
-  only
+Every command also has a Catalan alias, always active regardless of
+`LANGUAGE` (see "Language" below) — shown after "aka" below:
+
+- `/list [project]` (aka `/llista`) — open tasks, optionally filtered by
+  project
+- `/today` (aka `/avui`) — tasks due today or overdue
+- `/week` (aliases `/this_week`, `/setmana`) — tasks due by the end of this
+  week (starting `WEEK_START_DAY`) or overdue — handy for planning a weekly
+  sprint
+- `/plan_week` (aliases `/choose_weekly_tasks`, `/planifica_setmana`) —
+  weekly planning ritual: shows open tasks in `WEEKLY_PROJECT_NAME` with no
+  due date yet, or a due date before this week (carried over unfinished);
+  tapping one sets its due date to the end of this week and the message
+  refreshes with the rest, so you can tap through several goals in one
+  sitting
+- `/recap` (aka `/resum`) — what's been completed so far this week, merged
+  across every registered account (see "Weekly and monthly recap sections"
+  below)
+- `/projects` (aka `/projectes`) — list your Vikunja projects
+- `/chatid` (aka `/id_xat`) — this chat's ID (no registration needed) — for
+  setting `DIGEST_CHAT_ID`
+- `/pause [days]` (aka `/pausa`) / `/resume` (aka `/repren`) — suspend the
+  digest (indefinitely, or for a number of days), e.g. while away — see
+  "Pausing the digest" below
+- `/help` (aka `/ajuda`) — quick-add syntax + command list
+- `/adduser`/`/afegeix_usuari`, `/removeuser`/`/elimina_usuari`,
+  `/users`/`/usuaris` — admin only, `/adduser` private-chat only
+
+`/start` has no Catalan alias — Telegram's client always sends the literal
+`/start` text itself (e.g. on first opening a chat with the bot), so it has
+to stay as-is regardless of `LANGUAGE`.
 
 `/list` (with no project given), `/today`, and `/week` show tasks from
 multiple projects grouped under a `📁 Project` header; `/list <project>`
@@ -222,6 +257,32 @@ listed (`/list`, `/today`, `/week`, the digest):
 The idea is a task that's been quietly ignored for a week should look
 noticeably different from one that's a day late, instead of blending into
 the rest of the list.
+
+## Language
+
+Set `LANGUAGE=ca` in `.env` for Catalan; the default is `en` (English). This
+translates every message, button, and date/month display the bot sends —
+see `bot/i18n.py`. Both languages' commands always work regardless of this
+setting (e.g. `/today` and `/avui` are both always recognized) — `LANGUAGE`
+only picks which one shows up in `/help`/`/start` and which language
+outgoing text uses; it doesn't gate which commands are accepted.
+
+Two things stay English-only either way, since they're not display text but
+actual input the bot parses:
+
+- Quick-add's `!priority` words (`low`/`medium`/.../`donow`), `~repeat`
+  words (`daily`/`weekly`/.../`every N days`), and the trailing due-date
+  phrase (e.g. "tomorrow 5pm") — `bot/quickadd.py`'s regexes and
+  `dateparser`'s search are both English-only. Typing e.g. `~setmanal` or
+  `demà a les 5` won't be recognized; keep using the English forms shown in
+  `/help` even with `LANGUAGE=ca`.
+- The Reschedule prompt's "clear the due date" replies accept a few literal
+  words in both languages (`none`/`no date`/`remove`/`clear` and
+  `cap`/`sense data`/`elimina`/`esborra`) regardless of `LANGUAGE`.
+
+Dates/weekdays/months are formatted with the bot's own small lookup tables
+(`bot/i18n.py`) rather than the OS's locale data, so no `ca_ES` locale needs
+to be installed in the container.
 
 ## Morning digest
 
@@ -311,6 +372,12 @@ Setup:
    the bot, not in the group** (it posts a Vikunja token in plaintext;
    `/adduser` refuses to run outside a private chat as a guardrail against
    accidentally pasting one into the group).
+5. Make sure `DAILY_PROJECT_NAME` ("Dia a dia" by default) exists in
+   Vikunja — quick-add in the group defaults there (see "Which project a
+   task lands in without `+project`" above). Each person's own personal
+   project (quick-add's DM default) needs no separate setup — it's created
+   automatically, named after their registered display name, the first
+   time they quick-add from a DM.
 
 Because quick-add treats every plain-text message as an attempted task,
 this only works well if **the group is used exclusively for the bot** — if

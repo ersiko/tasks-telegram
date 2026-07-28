@@ -8,8 +8,9 @@ from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import CallbackQuery, Message
 
-from bot import quickadd
+from bot import i18n, quickadd
 from bot.config import Config
+from bot.db import UserStore
 from bot.keyboards import (
     cancel_pending_keyboard,
     delete_confirm_keyboard,
@@ -24,7 +25,7 @@ from bot.vikunja_client import VikunjaClient
 
 router = Router(name="tasks")
 
-RESCHEDULE_CLEAR_WORDS = {"none", "no date", "remove", "clear"}
+RESCHEDULE_CLEAR_WORDS = {"none", "no date", "remove", "clear", "cap", "sense data", "elimina", "esborra"}
 PENDING_ACTION_TTL_SECONDS = 600
 
 # In-memory only, keyed by telegram_id: which task/action a user is
@@ -69,25 +70,25 @@ async def _edit_original_list_message(bot, pending: dict, client: VikunjaClient,
         pass  # original list message may be gone/too old to edit - not critical
 
 
-@router.message(Command("list"))
+@router.message(Command("list", "llista"))
 async def cmd_list(message: Message, command: CommandObject, client: VikunjaClient, config: Config):
     ctx = "a"
     if command.args:
         project = await client.resolve_project(command.args.strip())
         if project is None:
-            await message.answer(f"No project matching '{command.args.strip()}'.")
+            await message.answer(i18n.t("list_no_project", name=command.args.strip()))
             return
         ctx = f"p{project['id']}"
 
     await _send_task_list(message, client, ctx, config)
 
 
-@router.message(Command("today"))
+@router.message(Command("today", "avui"))
 async def cmd_today(message: Message, client: VikunjaClient, config: Config):
     await _send_task_list(message, client, "t", config)
 
 
-@router.message(Command("week", "this_week"))
+@router.message(Command("week", "this_week", "setmana"))
 async def cmd_week(message: Message, client: VikunjaClient, config: Config):
     await _send_task_list(message, client, "w", config)
 
@@ -99,35 +100,58 @@ async def _handle_reschedule_reply(message: Message, client: VikunjaClient, conf
 
     if new_due is None and not is_clear:
         _pending_text_action[message.from_user.id] = pending  # let them retry
-        await message.answer(
-            "I couldn't find a date in that. Try again (e.g. 'friday 5pm'), "
-            "reply 'none' to remove the due date, or tap Cancel above."
-        )
+        await message.answer(i18n.t("reschedule_no_date_found"))
         return
 
     await client.set_due_date(pending["task_id"], new_due)
     await _edit_original_list_message(message.bot, pending, client, config)
 
     if new_due is None:
-        await message.answer("🚫 Due date removed")
+        await message.answer(i18n.t("due_date_removed"))
     else:
-        await message.answer(f"📅 Rescheduled to {new_due.strftime('%a %d %b %H:%M')}")
+        await message.answer(i18n.t("rescheduled_to", date=i18n.fmt_datetime(new_due)))
 
 
 async def _handle_rename_reply(message: Message, client: VikunjaClient, config: Config, pending: dict) -> None:
     new_title = message.text.strip()
     if not new_title:
         _pending_text_action[message.from_user.id] = pending  # let them retry
-        await message.answer("Title can't be empty. Try again, or tap Cancel above.")
+        await message.answer(i18n.t("rename_empty"))
         return
 
     await client.set_title(pending["task_id"], new_title)
     await _edit_original_list_message(message.bot, pending, client, config)
-    await message.answer(f"✏️ Renamed to '{html.escape(new_title)}'")
+    await message.answer(i18n.t("renamed_to", title=html.escape(new_title)))
+
+
+async def _resolve_context_default_project(
+    message: Message, client: VikunjaClient, user_store: UserStore, config: Config
+) -> Optional[dict]:
+    """The project a quick-add with no explicit +project should land in,
+    based on where the message came from - a DM is one person adding
+    something just for themselves, a group is the shared household chat.
+
+    A DM's personal project (named after the sender's registered
+    display_name) gets created on first use if it doesn't exist yet,
+    rather than silently falling back to DEFAULT_PROJECT_NAME - unlike the
+    shared DAILY_PROJECT_NAME, which the household is expected to already
+    have set up, a personal project has no other setup step to create it.
+    Falls through to config.default_project_name (checked by the caller) if
+    DAILY_PROJECT_NAME itself doesn't exist in Vikunja for the group case.
+    """
+    if message.chat.type == "private":
+        user = await user_store.get_user(message.from_user.id)
+        if user is None:
+            return None
+        project = await client.resolve_project(user.display_name)
+        if project is None:
+            project = await client.create_project(user.display_name)
+        return project
+    return await client.resolve_project(config.daily_project_name)
 
 
 @router.message(F.text & ~F.text.startswith("/"))
-async def handle_quick_add(message: Message, client: VikunjaClient, config: Config):
+async def handle_quick_add(message: Message, client: VikunjaClient, user_store: UserStore, config: Config):
     pending = _pop_valid_pending(message.from_user.id)
     if pending is not None:
         if pending["kind"] == "reschedule":
@@ -138,20 +162,22 @@ async def handle_quick_add(message: Message, client: VikunjaClient, config: Conf
 
     result = quickadd.parse(message.text)
     if not result.title:
-        await message.answer("I couldn't find a task title in that message.")
+        await message.answer(i18n.t("no_title_found"))
         return
 
     project = None
     if result.project:
         project = await client.resolve_project(result.project)
         if project is None:
-            await message.answer(f"No project matching '{result.project}'; using the default instead.")
+            await message.answer(i18n.t("project_fallback", project=result.project))
+    if project is None:
+        project = await _resolve_context_default_project(message, client, user_store, config)
     if project is None:
         project = await client.resolve_project(config.default_project_name)
     if project is None:
         projects = await client.list_projects()
         if not projects:
-            await message.answer("You have no projects in Vikunja yet — create one first.")
+            await message.answer(i18n.t("no_projects_yet"))
             return
         project = projects[0]
 
@@ -174,16 +200,19 @@ async def handle_quick_add(message: Message, client: VikunjaClient, config: Conf
         label = await client.resolve_label(label_name)
         await client.add_label_to_task(task["id"], label["id"])
 
-    summary = [f"✅ Added: {html.escape(result.title)}", f"Project: {html.escape(project['title'])}"]
+    summary = [
+        i18n.t("summary_added", title=html.escape(result.title)),
+        i18n.t("summary_project", title=html.escape(project["title"])),
+    ]
     if result.labels:
-        summary.append("Labels: " + ", ".join(html.escape(label) for label in result.labels))
+        summary.append(i18n.t("summary_labels", labels=", ".join(html.escape(label) for label in result.labels)))
     if result.priority:
-        summary.append(f"Priority: {result.priority}")
+        summary.append(i18n.t("summary_priority", value=result.priority))
     if due_date:
-        summary.append(f"Due: {due_date.strftime('%a %d %b %H:%M')}")
+        summary.append(i18n.t("summary_due", date=i18n.fmt_datetime(due_date)))
     repeat_desc = quickadd.describe_repeat(result.repeat_after, result.repeat_mode)
     if repeat_desc:
-        summary.append(f"Repeats: {repeat_desc}")
+        summary.append(i18n.t("summary_repeats", desc=i18n.repeat_desc(repeat_desc)))
     await message.answer("\n".join(summary), reply_markup=task_row_keyboard(task["id"]))
 
 
@@ -193,7 +222,7 @@ async def cb_menu(callback: CallbackQuery, client: VikunjaClient, config: Config
     tasks, _ = await ordered_tasks(client, ctx, config)
 
     if not tasks:
-        await callback.answer("Nothing left to pick.", show_alert=True)
+        await callback.answer(i18n.t("nothing_left_to_pick"), show_alert=True)
         return
 
     await callback.message.edit_reply_markup(reply_markup=task_picker_keyboard(tasks, action, ctx))
@@ -223,8 +252,7 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
             "set_at": time.monotonic(),
         }
         await callback.message.edit_text(
-            f"📅 When should '{html.escape(task['title'])}' be due?\n"
-            "Reply with a date (e.g. 'tomorrow 5pm', 'next friday'), or tap below.",
+            i18n.t("reschedule_prompt", title=html.escape(task["title"])),
             reply_markup=reschedule_prompt_keyboard(task_id, ctx),
         )
         await callback.answer()
@@ -246,7 +274,7 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
             "set_at": time.monotonic(),
         }
         await callback.message.edit_text(
-            f"✏️ Reply with the new title for '{html.escape(task['title'])}'.",
+            i18n.t("rename_prompt", title=html.escape(task["title"])),
             reply_markup=cancel_pending_keyboard(ctx),
         )
         await callback.answer()
@@ -255,7 +283,7 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
     if action == "delete":
         task = await client.get_task(task_id)
         await callback.message.edit_text(
-            f"🗑 Delete '{html.escape(task['title'])}'? This can't be undone.",
+            i18n.t("delete_confirm_prompt", title=html.escape(task["title"])),
             reply_markup=delete_confirm_keyboard(task_id, ctx),
         )
         await callback.answer()
@@ -264,7 +292,7 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, config: Config
     # action == "done"
     await client.set_done(task_id, True)
     await _refresh_list_message(callback, client, ctx, config)
-    await callback.answer("Marked done ✅")
+    await callback.answer(i18n.t("marked_done_full"))
 
 
 @router.callback_query(F.data.startswith("delconfirm:"))
@@ -272,7 +300,7 @@ async def cb_delete_confirm(callback: CallbackQuery, client: VikunjaClient, conf
     _, task_id_str, ctx = callback.data.split(":", 2)
     await client.delete_task(int(task_id_str))
     await _refresh_list_message(callback, client, ctx, config)
-    await callback.answer("Deleted 🗑")
+    await callback.answer(i18n.t("deleted_full"))
 
 
 @router.callback_query(F.data.startswith("setprio:"))
@@ -280,7 +308,7 @@ async def cb_set_priority(callback: CallbackQuery, client: VikunjaClient, config
     _, value_str, task_id_str, ctx = callback.data.split(":", 3)
     await client.set_priority(int(task_id_str), int(value_str))
     await _refresh_list_message(callback, client, ctx, config)
-    await callback.answer("Priority updated")
+    await callback.answer(i18n.t("priority_updated"))
 
 
 @router.callback_query(F.data.startswith("resched_clear:"))
@@ -289,7 +317,7 @@ async def cb_reschedule_clear(callback: CallbackQuery, client: VikunjaClient, co
     _pending_text_action.pop(callback.from_user.id, None)
     await client.set_due_date(int(task_id_str), None)
     await _refresh_list_message(callback, client, ctx, config)
-    await callback.answer("Due date removed 🚫")
+    await callback.answer(i18n.t("due_date_removed_short"))
 
 
 @router.callback_query(F.data.startswith("resched_snooze:"))
@@ -304,7 +332,7 @@ async def cb_reschedule_snooze(callback: CallbackQuery, client: VikunjaClient, c
     new_due = dt.datetime.now(ZoneInfo(config.timezone)) + dt.timedelta(days=int(days_str))
     await client.set_due_date(int(task_id_str), new_due)
     await _refresh_list_message(callback, client, ctx, config)
-    await callback.answer(f"😴 Snoozed to {new_due.strftime('%a %d %b')}")
+    await callback.answer(i18n.t("snoozed_to", date=i18n.fmt_date(new_due)))
 
 
 @router.callback_query(F.data.startswith("pending_cancel:"))
@@ -312,20 +340,20 @@ async def cb_pending_cancel(callback: CallbackQuery, client: VikunjaClient, conf
     _, ctx = callback.data.split(":", 1)
     _pending_text_action.pop(callback.from_user.id, None)
     await _refresh_list_message(callback, client, ctx, config)
-    await callback.answer("Cancelled")
+    await callback.answer(i18n.t("cancelled"))
 
 
 @router.callback_query(F.data.startswith("done:"))
 async def cb_done(callback: CallbackQuery, client: VikunjaClient, config: Config):
     task_id = int(callback.data.split(":", 1)[1])
     await client.set_done(task_id, True)
-    await callback.message.edit_text(f"{callback.message.text}\n✅ marked done")
-    await callback.answer("Marked done")
+    await callback.message.edit_text(f"{callback.message.text}\n{i18n.t('marked_done_suffix')}")
+    await callback.answer(i18n.t("marked_done_short"))
 
 
 @router.callback_query(F.data.startswith("del:"))
 async def cb_delete(callback: CallbackQuery, client: VikunjaClient, config: Config):
     task_id = int(callback.data.split(":", 1)[1])
     await client.delete_task(task_id)
-    await callback.message.edit_text(f"{callback.message.text}\n🗑 deleted")
-    await callback.answer("Deleted")
+    await callback.message.edit_text(f"{callback.message.text}\n{i18n.t('deleted_suffix')}")
+    await callback.answer(i18n.t("deleted_short"))

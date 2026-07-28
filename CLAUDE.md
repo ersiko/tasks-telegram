@@ -101,10 +101,40 @@ values encrypted at rest with a Fernet key from `FERNET_KEY`).
   `describe_repeat` reconstructs a human label from just the seconds count, so it can't
   losslessly distinguish e.g. "every 90 days" from "every 3 months" - it picks the largest
   evenly-dividing unit as a best-effort guess, not a round-trip of what was typed.
+- `bot/i18n.py` — English/Catalan string tables (`t(key, **kwargs)`) plus locale-safe
+  weekday/month formatters (`fmt_date`/`fmt_datetime`/`fmt_month`), driven by `LANGUAGE`
+  (`Config.language`, initialized once via `i18n.init()` in `main.py` - a single process-global,
+  not per-user, since this is a household tool not a multi-tenant service). Hand-written
+  weekday/month tables rather than `locale.setlocale()` + `strftime` - deliberate, since the
+  `python:3.12-slim` Docker image has no `ca_ES` locale data (same reasoning as `tzdata` being
+  a required pip dependency, see below) and `setlocale()` is process-global/not thread-safe
+  anyway. Every command in `bot/handlers/` is registered with both its English and Catalan
+  name (e.g. `Command("today", "avui")) - both always work regardless of `LANGUAGE`, which
+  only picks what's *shown* (in `/help`, outgoing messages). `bot/quickadd.py` itself stays
+  English-only and untouched by `i18n.py` (its parser regexes and `dateparser` locale are both
+  hardcoded to English) - `describe_repeat()`'s output gets translated for display via
+  `i18n.repeat_desc()` at the `tasks.py` call site instead, keeping quickadd.py pure/tested in
+  isolation. `/start` has no Catalan alias since Telegram's client itself always sends the
+  literal text `/start`.
 - `bot/handlers/` — aiogram routers, one per feature area (`tasks`, `planning`, `projects`,
   `admin`, `start`), registered in `bot/main.py`. `tasks.py` is the largest: it owns the
   catch-all quick-add message handler plus `/list`/`/today`/`/week` and the whole
   callback-driven list/picker/action flow described below.
+- `handle_quick_add`'s default-project fallback (no explicit `+project`) branches on
+  `message.chat.type` via `_resolve_context_default_project`: a DM defaults to a project named
+  after the sender's own registered `display_name` (their personal project - looked up through
+  `user_store`, which is why this handler takes `user_store: UserStore` as a param despite
+  otherwise only needing `client`), a group chat defaults to `DAILY_PROJECT_NAME`. The DM case
+  auto-creates the personal project via `VikunjaClient.create_project` on first use if it
+  doesn't exist (needs the token's Projects **create** permission) rather than falling back -
+  unlike `DAILY_PROJECT_NAME`, a personal project has no separate setup step to create it, so
+  silently falling back to `DEFAULT_PROJECT_NAME` instead would mean tasks quietly not landing
+  where expected with no obvious fix. The group case is *not* auto-created (that's expected to
+  already exist as part of normal household setup) - it falls through silently (no fallback
+  notice - it's a default, not a user mistake) to `DEFAULT_PROJECT_NAME` and then the account's
+  first project if `DAILY_PROJECT_NAME` doesn't exist. `WEEKLY_PROJECT_NAME` is deliberately
+  never a quick-add default - it's only ever populated via `/plan_week`, so an off-hand
+  quick-add message doesn't end up silently claiming a spot on this week's curated plan.
 - `bot/digest.py` — background `asyncio` task, started via `asyncio.create_task` in
   `main.py` alongside (not instead of) `dp.start_polling`, that wakes once a day and pushes
   each registered user their `/today`-equivalent view via `bot.send_message`. Checks
