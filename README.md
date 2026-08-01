@@ -245,8 +245,8 @@ to stay as-is regardless of `LANGUAGE`.
 multiple projects grouped under a `📁 Project` header; `/list <project>`
 stays a flat list since the project's already implied. Each of these sends
 one message with **✅ Mark Done** / **🗑 Delete** / **📅 Reschedule** /
-**🔢 Priority** / **✏️ Rename** buttons — tapping any of them swaps to a
-per-task picker (titles as buttons) to pick which task, then:
+**🔢 Priority** / **✏️ Rename** / **🔁 Repeat** buttons — tapping any of them
+swaps to a per-task picker (titles as buttons) to pick which task, then:
 
 - **Mark Done** applies immediately; the message refreshes back to the list.
 - **Delete** asks for confirmation first ("Yes, delete" / Cancel) — the one
@@ -261,6 +261,14 @@ per-task picker (titles as buttons) to pick which task, then:
 - **Priority** shows six buttons (Unset/Low/Medium/High/Urgent/Do now) — tap
   one to set it immediately.
 - **Rename** prompts you to reply with the new title.
+- **Repeat** shows seven presets (Off/Daily/Weekly/Every 2 weeks/Monthly/
+  Every 3 months/Yearly) — tap one to apply immediately, same as Priority.
+  This is the only way to add or change recurrence on a task that already
+  exists; quick-add's `~repeat` only ever applies at creation time. Repeat
+  needs a due date to repeat from, same rule quick-add follows — if the
+  task doesn't have one yet, picking anything other than Off sets it to
+  right now too (you'll get an alert saying so, since it's a side effect
+  you didn't explicitly ask for).
 
 Reschedule and Rename need a text reply, so the prompt expires after 10
 minutes if you never respond — otherwise an abandoned prompt could hijack

@@ -138,8 +138,8 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/pause [days] - pause the digest (indefinitely, or for N days)\n"
             "/resume - resume the digest\n"
             "/help - show this message\n\n"
-            "Each list has Mark Done / Delete / Reschedule / Priority / Rename buttons — "
-            "tap one, then pick a task."
+            "Each list has Mark Done / Delete / Reschedule / Priority / Rename / Repeat "
+            "buttons — tap one, then pick a task."
         ),
         "ca": (
             "Envia'm un missatge normal per afegir una tasca, per exemple:\n"
@@ -163,8 +163,8 @@ _STRINGS: dict[str, dict[str, str]] = {
             "/pausa [dies] - posa en pausa el resum diari (indefinidament, o durant N dies)\n"
             "/repren - reprèn el resum diari\n"
             "/ajuda - mostra aquest missatge\n\n"
-            "Cada llista té botons de Marca com a fet / Elimina / Reprograma / Prioritat / Reanomena — "
-            "toca'n un i després tria una tasca."
+            "Cada llista té botons de Marca com a fet / Elimina / Reprograma / Prioritat / "
+            "Reanomena / Repetició — toca'n un i després tria una tasca."
         ),
     },
     "chatid_message": {
@@ -381,6 +381,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_reschedule": {"en": "📅 Reschedule", "ca": "📅 Reprograma"},
     "btn_priority": {"en": "🔢 Priority", "ca": "🔢 Prioritat"},
     "btn_rename": {"en": "✏️ Rename", "ca": "✏️ Reanomena"},
+    "btn_repeat": {"en": "🔁 Repeat", "ca": "🔁 Repetició"},
     "btn_back": {"en": "‹ Back", "ca": "‹ Enrere"},
     "btn_cancel": {"en": "‹ Cancel", "ca": "‹ Cancel·la"},
     "btn_snooze_day": {"en": "😴 +1 day", "ca": "😴 +1 dia"},
@@ -393,6 +394,19 @@ _STRINGS: dict[str, dict[str, str]] = {
     "priority_high": {"en": "🟡 High", "ca": "🟡 Alta"},
     "priority_urgent": {"en": "🟠 Urgent", "ca": "🟠 Urgent"},
     "priority_donow": {"en": "🔴 Do now", "ca": "🔴 Fes-ho ara"},
+    "repeat_off": {"en": "🚫 Off", "ca": "🚫 Sense repetició"},
+    "repeat_daily": {"en": "🔁 Daily", "ca": "🔁 Diàriament"},
+    "repeat_weekly": {"en": "🔁 Weekly", "ca": "🔁 Setmanalment"},
+    "repeat_every_2_weeks": {"en": "🔁 Every 2 weeks", "ca": "🔁 Cada 2 setmanes"},
+    "repeat_monthly": {"en": "🔁 Monthly", "ca": "🔁 Mensualment"},
+    "repeat_every_3_months": {"en": "🔁 Every 3 months", "ca": "🔁 Cada 3 mesos"},
+    "repeat_yearly": {"en": "🔁 Yearly", "ca": "🔁 Anualment"},
+    "repeat_updated": {"en": "Repeat updated 🔁", "ca": "Repetició actualitzada 🔁"},
+    "repeat_updated_with_due": {
+        "en": "Repeat updated 🔁 (also set a due date of now, since it had none - repeat needs one to repeat from)",
+        "ca": "Repetició actualitzada 🔁 (també s'ha establert la data límit a ara, ja que no en tenia - "
+        "la repetició necessita una data des de la qual repetir-se)",
+    },
     # bot/task_view.py
     "empty_today": {"en": "Nothing due today. 🎉", "ca": "No venç res avui. 🎉"},
     "empty_week": {"en": "Nothing due this week. 🎉", "ca": "No venç res aquesta setmana. 🎉"},

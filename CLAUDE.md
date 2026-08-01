@@ -179,7 +179,7 @@ an inline keyboard. Menu → picker → action, driven entirely by `callback_dat
 prefixes matched with `F.data.startswith(...)` in `bot/handlers/tasks.py`:
 
 - `menu:{action}:{ctx}` — top-level buttons (Mark Done / Delete / Reschedule / Priority /
-  Rename) from `list_menu_keyboard`. `ctx` encodes what the message is a view of: `"a"`
+  Rename / Repeat) from `list_menu_keyboard`. `ctx` encodes what the message is a view of: `"a"`
   (all), `"t"` (today), `"tm"` (tomorrow), `"w"` (this week — boundaries per
   `config.week_start_day`, not hardcoded Monday-Sunday), or `"p{project_id}"` (one project) —
   see `task_view.get_tasks_for_ctx`. `"tm"` is the odd one out: `"t"`/`"w"` are cumulative
@@ -201,6 +201,16 @@ prefixes matched with `F.data.startswith(...)` in `bot/handlers/tasks.py`:
   (+1 day / +1 week) that skip the text-reply step entirely - resolved relative to *now*, not
   the task's current due date, so snoozing an overdue task always lands it in the future
   rather than nudging a stale due date and leaving it still overdue.
+- Repeat (`setrepeat:{repeat_after}:{repeat_mode}:{task_id}:{ctx}`, `repeat_picker_keyboard`)
+  is the only way to add/change recurrence on a task that already exists - `~repeat` (see
+  `bot/quickadd.py`) only ever applies at creation time via quick-add. Presets reuse
+  `quickadd`'s own `SECONDS_PER_*`/`REPEAT_MODE_*` constants directly (imported into
+  `keyboards.py`) rather than redefining them, so the two stay in sync by construction.
+  `cb_set_repeat` mirrors quick-add's "repeat needs a due date to repeat from" rule
+  (`handle_quick_add`): picking anything but Off on a task with no due date
+  (`task_view.parse_due_date(task["due_date"]) is None`) sets one to now first - flagged back
+  to the user via `show_alert=True` (not just a toast) since it's a side effect they didn't
+  explicitly ask for and a `callback.answer()` toast auto-dismisses fast enough to miss.
 - Every handler gets its `VikunjaClient` from `VikunjaClientMiddleware` (see above), not by
   resolving it itself.
 

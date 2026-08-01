@@ -133,6 +133,15 @@ class VikunjaClient:
     async def set_priority(self, task_id: int, priority: int) -> dict:
         return await self._request("POST", f"/tasks/{task_id}", json={"priority": priority})
 
+    async def set_repeat(self, task_id: int, repeat_after: int, repeat_mode: int) -> dict:
+        # repeat_after=0, repeat_mode=0 is Vikunja's "does not repeat" state
+        # - the same state a task ends up in when create_task never sends
+        # these fields at all (see bot/quickadd.py's REPEAT_MODE_* comment
+        # for what the other values mean).
+        return await self._request(
+            "POST", f"/tasks/{task_id}", json={"repeat_after": repeat_after, "repeat_mode": repeat_mode}
+        )
+
     async def set_title(self, task_id: int, title: str) -> dict:
         return await self._request("POST", f"/tasks/{task_id}", json={"title": title})
 

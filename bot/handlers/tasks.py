@@ -16,11 +16,12 @@ from bot.keyboards import (
     delete_confirm_keyboard,
     list_menu_keyboard,
     priority_picker_keyboard,
+    repeat_picker_keyboard,
     reschedule_prompt_keyboard,
     task_picker_keyboard,
     task_row_keyboard,
 )
-from bot.task_view import format_task_list_text, ordered_tasks, resolve_personal_project_id
+from bot.task_view import format_task_list_text, ordered_tasks, parse_due_date, resolve_personal_project_id
 from bot.vikunja_client import VikunjaClient
 
 router = Router(name="tasks")
@@ -316,6 +317,11 @@ async def cb_pick(callback: CallbackQuery, client: VikunjaClient, user_store: Us
         await callback.answer()
         return
 
+    if action == "repeat":
+        await callback.message.edit_reply_markup(reply_markup=repeat_picker_keyboard(task_id, ctx))
+        await callback.answer()
+        return
+
     if action == "rename":
         task = await client.get_task(task_id)
         _pending_text_action[callback.from_user.id] = {
@@ -362,6 +368,35 @@ async def cb_set_priority(callback: CallbackQuery, client: VikunjaClient, user_s
     await client.set_priority(int(task_id_str), int(value_str))
     await _refresh_list_message(callback, client, user_store, ctx, config)
     await callback.answer(i18n.t("priority_updated"))
+
+
+@router.callback_query(F.data.startswith("setrepeat:"))
+async def cb_set_repeat(callback: CallbackQuery, client: VikunjaClient, user_store: UserStore, config: Config):
+    _, repeat_after_str, repeat_mode_str, task_id_str, ctx = callback.data.split(":", 4)
+    repeat_after = int(repeat_after_str)
+    repeat_mode = int(repeat_mode_str)
+    task_id = int(task_id_str)
+
+    gained_due_date = False
+    if repeat_mode != 0:
+        # Repeat needs an initial due date to repeat from - same rule
+        # quick-add applies at creation time (bot/handlers/tasks.py's
+        # handle_quick_add). A task that's had no due date until now
+        # wouldn't otherwise start repeating at all, so default it to now
+        # rather than silently accepting a repeat setting that can't fire.
+        task = await client.get_task(task_id)
+        if parse_due_date(task.get("due_date")) is None:
+            await client.set_due_date(task_id, dt.datetime.now(ZoneInfo(config.timezone)))
+            gained_due_date = True
+
+    await client.set_repeat(task_id, repeat_after, repeat_mode)
+    await _refresh_list_message(callback, client, user_store, ctx, config)
+    if gained_due_date:
+        # Longer message, and easy to miss in a toast that auto-dismisses -
+        # worth an alert since it's a side effect the user didn't ask for.
+        await callback.answer(i18n.t("repeat_updated_with_due"), show_alert=True)
+    else:
+        await callback.answer(i18n.t("repeat_updated"))
 
 
 @router.callback_query(F.data.startswith("resched_clear:"))
